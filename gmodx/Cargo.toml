@@ -1,9 +1,18 @@
 [package]
 name = "gmodx"
 version = "0.1.0"
-edition = "2024"
 authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
+edition = "2024"
 license = "MIT"
+description = "A swiss army knife for creating binary modules for Garry's Mod in Rust"
+repository = "https://github.com/Srlion/gmodx-rs"
+keywords = ["gmod", "garrysmod", "module", "glua"]
+categories = [
+    "api-bindings",
+    "external-ffi-bindings",
+    "game-development",
+    "development-tools",
+]
 
 [dependencies]
 gmodx-macros = { path = "../gmodx-macros", version = "0.1.0" }
