@@ -5,6 +5,8 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::sync::OnceLock;
 
+// The reason for OnceLock over LazyLock is to have more control over initialization timing.
+// So other open_close hooks can run before it if needed.
 static LUA_SHARED: OnceLock<LuaShared> = OnceLock::new();
 
 #[inline(always)]
