@@ -1,0 +1,15 @@
+[package]
+name = "gmodx"
+version = "0.1.0"
+edition = "2024"
+authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
+license = "MIT"
+
+[dependencies]
+gmodx-macros = { path = "../gmodx-macros" }
+inventory = "0.3.21"
+libloading = "0.8.9"
+
+[build-dependencies]
+bindgen = "0.72.1"
+cc = "1.0"
