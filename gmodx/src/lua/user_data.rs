@@ -8,6 +8,9 @@ pub type UserDataMethods = &'static [(lua::CStr<'static>, lua::RustFunction)];
 pub const INDEX_KEY: i32 = 1;
 
 #[repr(C)]
+struct EmptyUserData;
+
+#[repr(C)]
 pub struct TaggedUserData<T: 'static> {
     pub data: T,
     pub type_id: TypeId,
@@ -46,10 +49,15 @@ impl<T: 'static> TaggedUserData<T> {
         let tagged_ptr = ptr as *mut Self;
         // SAFETY: We've checked ptr is not null
         // The type_id check below validates the type.
-        let tagged_ref = unsafe { &*tagged_ptr };
+        let tagged_ref = unsafe { &mut *tagged_ptr };
         if !tagged_ref.is() {
             return None;
         }
+        // Mark the userdata as empty to prevent double free
+        // This is for people who manually call __gc on the userdata
+        // which is technically undefined behavior but we can at least
+        // try to mitigate the damage.
+        tagged_ref.type_id = TypeId::of::<EmptyUserData>();
         // SAFETY: We've verified the pointer is valid and of the correct type.
         let tagged = unsafe { std::ptr::read(tagged_ptr) };
         Some(tagged)
@@ -60,12 +68,10 @@ extern "C" fn userdata_gc<T: UserData>(l: *mut lua_State) -> i32 {
     let l = lua::State(l);
     let tagged = TaggedUserData::<T>::consume(l.raw_to_userdata(-1));
     match tagged {
-        Some(t) => {
-            drop(t.data); // Explicitly drop the data
-        }
+        Some(t) => drop(t.data), // Explicitly drop the data
         None => {
             #[cfg(debug_assertions)]
-            eprintln!("[gmodx] Warning: __gc called on invalid userdata");
+            eprintln!("[gmodx] Warning: __gc called on invalid userdata")
         }
     }
     0
