@@ -16,33 +16,3 @@ macro_rules! cstr_from_args {
         unsafe { CStr::from_ptr(ptr) }
     }};
 }
-
-#[macro_export]
-macro_rules! lua_regs {
-	() => {
-        &[
-            $crate::luaL_Reg {
-                name: std::ptr::null(),
-                func: None,
-            }
-        ]
-    };
-    (
-        $(
-            $name:literal => $func:expr
-        ),* $(,)?
-    ) => {
-        &[
-            $(
-                $crate::luaL_Reg {
-                    name: concat!($name, "\0").as_ptr() as *const i8,
-                    func: Some($func),
-                }
-            ),*,
-            $crate::luaL_Reg {
-                name: std::ptr::null(),
-                func: None,
-            }
-        ]
-    };
-}
