@@ -8,6 +8,16 @@ macro_rules! cstr {
 }
 
 #[macro_export]
+macro_rules! cstr_from_args {
+    ($($arg:expr),+) => {{
+        use std::ffi::{c_char, CStr};
+        const BYTES: &[u8] = const_str::concat!($($arg),+, "\0").as_bytes();
+        let ptr: *const c_char = BYTES.as_ptr().cast();
+        unsafe { CStr::from_ptr(ptr) }
+    }};
+}
+
+#[macro_export]
 macro_rules! lua_regs {
 	() => {
         &[

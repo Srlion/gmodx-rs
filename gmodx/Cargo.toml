@@ -18,6 +18,7 @@ categories = [
 gmodx-macros = { path = "../gmodx-macros", version = "0.1.0" }
 inventory = "0.3.21"
 libloading = "0.8.9"
+const-str = "0.7.0"
 
 [build-dependencies]
 bindgen = "0.72.1"
