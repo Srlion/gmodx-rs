@@ -130,5 +130,6 @@ int lua_getinfo(lua_State *L, const char *what, lua_Debug *ar);
 typedef struct
 {
     int (*error)(lua_State *L);
-    bool (*rust_lua_callback)(lua_State *L, int *result);
+    bool (*rust_function_callback)(lua_State *L, int *result);
+    bool (*rust_closure_callback)(lua_State *L, int *result);
 } ApiTable;

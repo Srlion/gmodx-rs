@@ -1,14 +1,15 @@
 // wrapper.c
 #include "lua.h"
 
-static ApiTable api = {NULL, NULL}; // Initialize all fields to NULL
+static ApiTable api = {NULL, NULL, NULL}; // Initialize all fields to NULL
 
 void set_api_table(const ApiTable *napi)
 {
     if (napi == NULL)
     {
         api.error = NULL;
-        api.rust_lua_callback = NULL;
+        api.rust_function_callback = NULL;
+        api.rust_closure_callback = NULL;
     }
     else
     {
@@ -16,18 +17,34 @@ void set_api_table(const ApiTable *napi)
     }
 }
 
-static int result = 0;
-static int lua_call_rust(lua_State *L)
+static int call_rust_function(lua_State *L)
 {
-    if (!api.rust_lua_callback(L, &result))
+    int function_result = 0;
+    if (!api.rust_function_callback(L, &function_result))
     {
         api.error(L);
         return 0;
     }
-    return result;
+    return function_result;
 }
 
-lua_CFunction get_lua_call_rust(void)
+static int call_rust_closure(lua_State *L)
 {
-    return &lua_call_rust;
+    int closure_result = 0;
+    if (!api.rust_closure_callback(L, &closure_result))
+    {
+        api.error(L);
+        return 0;
+    }
+    return closure_result;
+}
+
+lua_CFunction get_call_rust_function(void)
+{
+    return &call_rust_function;
+}
+
+lua_CFunction get_call_rust_closure(void)
+{
+    return &call_rust_closure;
 }

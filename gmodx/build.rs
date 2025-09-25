@@ -19,7 +19,8 @@ fn main() {
         // .override_abi(bindgen::Abi::CUnwind, "lua_CFunction")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .override_abi(bindgen::Abi::CUnwind, "rust_lua_callback")
+        .override_abi(bindgen::Abi::CUnwind, "rust_function_callback")
+        .override_abi(bindgen::Abi::CUnwind, "rust_closure_callback")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");

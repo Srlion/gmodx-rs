@@ -1,6 +1,8 @@
-#![allow(static_mut_refs)]
-
-use std::{error::Error, fmt::Display, os::raw::c_int};
+use std::{
+    error::Error,
+    fmt::Display,
+    os::raw::{c_int, c_void},
+};
 
 use crate::{
     lua::{self, upvalue_index},
@@ -8,34 +10,30 @@ use crate::{
 };
 
 unsafe extern "C" {
-    fn get_lua_call_rust() -> CFunction;
+    fn get_call_rust_function() -> CFunction;
+    fn get_call_rust_closure() -> CFunction;
     fn set_api_table(napi: *const lua_shared::ApiTable);
-}
-
-#[repr(C)]
-struct FunctionData {
-    func: RustFunction,
-    one_shot: bool,
 }
 
 pub type CFunction = lua_shared::lua_CFunction;
 pub type RawCFunction = unsafe extern "C" fn(lua::State) -> i32;
-pub type RustFunctionResult = Result<i32, Box<dyn Error + Send + Sync>>;
+pub type RustFunctionResult = Result<i32, Box<dyn Error>>;
 pub type RustFunction = fn(lua::State) -> RustFunctionResult;
+pub type BoxedRustFunction = Box<dyn Fn(lua::State) -> RustFunctionResult>;
 
 pub trait FunctionReturn {
     fn handle_result(self, l: lua::State) -> RustFunctionResult;
 }
 
 impl FunctionReturn for i32 {
-    #[inline(always)]
+    #[inline]
     fn handle_result(self, _: lua::State) -> RustFunctionResult {
         Ok(self)
     }
 }
 
 impl FunctionReturn for () {
-    #[inline(always)]
+    #[inline]
     fn handle_result(self, _: lua::State) -> RustFunctionResult {
         Ok(0)
     }
@@ -46,7 +44,7 @@ where
     T: FunctionReturn,
     E: Display,
 {
-    #[inline(always)]
+    #[inline]
     fn handle_result(self, l: lua::State) -> RustFunctionResult {
         match self {
             Ok(val) => val.handle_result(l),
@@ -55,57 +53,114 @@ where
     }
 }
 
+trait IntoRustFunction<R> {
+    fn into_rust_function(self) -> BoxedRustFunction;
+}
+
+impl<F, R> IntoRustFunction<R> for F
+where
+    F: Fn(lua::State) -> R + 'static,
+    R: FunctionReturn,
+{
+    fn into_rust_function(self) -> BoxedRustFunction {
+        Box::new(move |l: lua::State| self(l).handle_result(l))
+    }
+}
+
 impl lua::State {
     #[inline]
     pub fn push_function(self, func: RustFunction) {
-        self.push_function_x(func, false);
+        unsafe {
+            self.push_light_userdata(func as *mut c_void);
+        }
+        // Push the C closure with our userdata as upvalue
+        self.raw_push_cclosure(unsafe { get_call_rust_function() }, 1);
     }
 
     #[inline]
-    pub fn push_function_x(self, func: RustFunction, one_shot: bool) {
-        let data_ptr =
-            self.raw_new_userdata(std::mem::size_of::<FunctionData>()) as *mut FunctionData;
+    pub fn push_closure<F, R>(self, func: F)
+    where
+        F: Fn(lua::State) -> R + 'static,
+        R: FunctionReturn,
+    {
+        // Create userdata to hold the boxed function
+        let func_box = func.into_rust_function();
+        let data_ptr = self.raw_new_userdata(std::mem::size_of::<BoxedRustFunction>())
+            as *mut BoxedRustFunction;
+
         unsafe {
-            data_ptr.write(FunctionData { func, one_shot });
+            // Write the box directly into the userdata
+            data_ptr.write(func_box);
         }
 
-        // Now only 1 upvalue instead of 2
-        self.push_cclosure(unsafe { get_lua_call_rust() }, 1);
+        // Create metatable with __gc for cleanup
+        self.create_table(0, 1);
+        self.raw_push_cclosure(Some(gc_rust_function), 0);
+        self.set_field(-2, c"__gc");
+        self.set_metatable(-2);
+
+        // Push the C closure with our userdata as upvalue
+        self.raw_push_cclosure(unsafe { get_call_rust_closure() }, 1);
     }
+}
+
+extern "C" fn gc_rust_function(l: *mut lua_shared::lua_State) -> c_int {
+    let l = lua::State(l);
+    let data_ptr = l.raw_to_userdata(1) as *mut BoxedRustFunction;
+    if !data_ptr.is_null() {
+        unsafe {
+            // Read the Box out and drop it properly
+            // This will deallocate the heap memory and run any destructors
+            std::ptr::drop_in_place(data_ptr);
+        }
+    }
+    0
 }
 
 // So this way of calling from Lua -> C -> Rust is for maximum safety.
 // This is because lua_error can longjmp out of the function, skipping any
 // Rust stack unwinding, which is undefined behavior.
-extern "C-unwind" fn rust_lua_callback(l: *mut lua_shared::lua_State, result: *mut c_int) -> bool {
+extern "C-unwind" fn rust_function_callback(
+    l: *mut lua_shared::lua_State,
+    result: *mut c_int,
+) -> bool {
     let l = lua::State(l);
-
-    let data_ptr = l.raw_to_userdata(upvalue_index(1)) as *mut FunctionData;
-    if data_ptr.is_null() {
+    let func_raw = l.raw_to_userdata(upvalue_index(1));
+    if func_raw.is_null() {
         l.push_string("attempt to call a nil value");
         return false;
     }
-
-    let data = unsafe { &mut *data_ptr };
-
-    #[inline(always)]
-    fn release(l: lua::State, data: &mut FunctionData) {
-        if data.one_shot {
-            // Remove the function data from the stack
-            l.push_bool(false);
-            l.replace(upvalue_index(1));
-        }
-    }
-
-    match (data.func)(l) {
+    let func: RustFunction = unsafe { std::mem::transmute(func_raw) };
+    match func(l) {
         Ok(v) => unsafe {
             *result = v;
-            release(l, data);
             true
         },
         Err(err) => {
             l.push_string(&err.to_string());
-            release(l, data);
+            false
+        }
+    }
+}
+
+extern "C-unwind" fn rust_closure_callback(
+    l: *mut lua_shared::lua_State,
+    result: *mut c_int,
+) -> bool {
+    let l = lua::State(l);
+    let data_ptr = l.raw_to_userdata(upvalue_index(1)) as *mut BoxedRustFunction;
+    if data_ptr.is_null() {
+        l.push_string("attempt to call a nil value");
+        return false;
+    }
+    let func = unsafe { &*data_ptr };
+    match func(l) {
+        Ok(v) => unsafe {
+            *result = v;
+            true
+        },
+        Err(err) => {
+            l.push_string(&err.to_string());
             false
         }
     }
@@ -118,7 +173,8 @@ inventory::submit! {
         |_| unsafe {
             set_api_table(&lua_shared::ApiTable {
                 error: Some(lua_shared::lua_shared().lua_error),
-                rust_lua_callback: Some(rust_lua_callback),
+                rust_function_callback: Some(rust_function_callback),
+                rust_closure_callback: Some(rust_closure_callback),
             });
         },
         |_| unsafe {

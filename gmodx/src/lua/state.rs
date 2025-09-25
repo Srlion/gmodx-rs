@@ -65,11 +65,13 @@ impl State {
 
 impl State {
     #[inline]
-    pub fn check_table(self, index: i32) -> Result<(), String> {
+    pub fn check_table(self, index: i32) -> Result<(), lua::Error> {
         if self.is_table(index) {
             Ok(())
         } else {
-            Err(self.tag_error(index, lua::TTABLE as i32))
+            Err(lua::Error::Message(
+                self.tag_error(index, lua::TTABLE as i32),
+            ))
         }
     }
 }
@@ -262,7 +264,7 @@ impl State {
     }
 
     #[inline]
-    pub fn push_cclosure(self, func: lua::CFunction, n: i32) {
+    pub fn raw_push_cclosure(self, func: lua::CFunction, n: i32) {
         unsafe { (lua_shared().lua_pushcclosure)(self.0, func, n) }
     }
 

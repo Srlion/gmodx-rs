@@ -103,7 +103,7 @@ impl lua::State {
         self.create_table(0, 1);
         // gc_mt.__gc = T.__internal_gc
         {
-            self.push_cclosure(Some(userdata_gc::<T>), 0);
+            self.raw_push_cclosure(Some(userdata_gc::<T>), 0);
             self.set_field(-2, c"__gc");
         }
 
@@ -128,16 +128,16 @@ impl lua::State {
         self.set_metatable(-2);
     }
 
-    pub fn to_userdata<'a, T: UserData>(self, index: i32) -> Result<&'a mut T, String> {
-        self.check_table(index)?;
+    pub fn to_userdata<'a, T: UserData>(self, index: i32) -> Option<&'a mut T> {
+        self.check_table(index).ok()?;
         self.raw_geti(index, INDEX_KEY);
-
         let tagged = TaggedUserData::<T>::from_ptr(self.raw_to_userdata(-1));
-        tagged.map(|t| &mut t.data).ok_or_else(|| {
-            format!(
-                "expected userdata of type '{}'",
-                T::METATABLE_NAME.to_string_lossy()
-            )
+        tagged.map(|t| &mut t.data)
+    }
+
+    pub fn check_userdata<'a, T: UserData>(self, index: i32) -> Result<&'a mut T, lua::Error> {
+        self.to_userdata(index).ok_or_else(|| {
+            lua::Error::Message(self.type_error(index, &T::METATABLE_NAME.to_string_lossy()))
         })
     }
 }

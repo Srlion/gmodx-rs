@@ -21,6 +21,9 @@ pub enum Error {
     /// Attempted to call a Lua value that is not a function.
     NotAFunction,
 
+    /// A generic error represented by a string message.
+    Message(String),
+
     /// An unrecognized or unknown Lua error code was returned.
     /// Contains the raw error code from Lua.
     Unknown(i32),
@@ -43,6 +46,7 @@ impl std::fmt::Display for Error {
             Error::NotAFunction => {
                 write!(f, "Attempted to call a Lua value that is not a function")
             }
+            Error::Message(msg) => write!(f, "{}", msg),
             Error::Unknown(code) => write!(f, "Unknown Lua error code: {}", code),
         }
     }
