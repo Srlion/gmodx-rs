@@ -99,7 +99,6 @@ impl lua::State {
 
         // We need a __gc metamethod to drop the Box properly
         if self.new_metatable(Self::CLOSURE_GC_METATABLE_NAME) {
-            self.create_table(0, 1);
             self.raw_push_cclosure(Some(gc_rust_function), 0);
             self.set_field(-2, c"__gc");
         }
