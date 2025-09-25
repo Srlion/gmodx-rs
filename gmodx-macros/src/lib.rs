@@ -229,3 +229,17 @@ fn check_gmod13_function(input: &mut ItemFn, expected_name: &str) {
         }
     }
 }
+
+#[proc_macro]
+pub fn compile_timestamp(_input: TokenStream) -> TokenStream {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let expanded = quote! {
+        #timestamp
+    };
+
+    TokenStream::from(expanded)
+}
