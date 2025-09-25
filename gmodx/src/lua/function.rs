@@ -73,9 +73,14 @@ impl lua::State {
         unsafe {
             self.push_light_userdata(func as *mut c_void);
         }
-        // Push the C closure with our userdata as upvalue
         self.raw_push_cclosure(unsafe { get_call_rust_function() }, 1);
     }
+
+    const CLOSURE_GC_METATABLE_NAME: lua::CStr<'_> = crate::cstr_from_args!(
+        "__gmodx_closure_gc_mt",
+        env!("CARGO_PKG_VERSION"),
+        gmodx_macros::compile_timestamp!()
+    );
 
     #[inline]
     pub fn push_closure<F, R>(self, func: F)
@@ -89,17 +94,17 @@ impl lua::State {
             as *mut BoxedRustFunction;
 
         unsafe {
-            // Write the box directly into the userdata
             data_ptr.write(func_box);
         }
 
-        // Create metatable with __gc for cleanup
-        self.create_table(0, 1);
-        self.raw_push_cclosure(Some(gc_rust_function), 0);
-        self.set_field(-2, c"__gc");
+        // We need a __gc metamethod to drop the Box properly
+        if self.new_metatable(Self::CLOSURE_GC_METATABLE_NAME) {
+            self.create_table(0, 1);
+            self.raw_push_cclosure(Some(gc_rust_function), 0);
+            self.set_field(-2, c"__gc");
+        }
         self.set_metatable(-2);
 
-        // Push the C closure with our userdata as upvalue
         self.raw_push_cclosure(unsafe { get_call_rust_closure() }, 1);
     }
 }
