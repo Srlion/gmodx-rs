@@ -1,3 +1,5 @@
+use crate::lua;
+
 #[derive(Debug, Clone)]
 pub enum Error {
     /// Lua failed to allocate memory for an operation.
@@ -27,6 +29,28 @@ pub enum Error {
     /// An unrecognized or unknown Lua error code was returned.
     /// Contains the raw error code from Lua.
     Unknown(i32),
+}
+
+impl Error {
+    pub fn from_lua_state(lua_state: lua::State, lua_int_error_code: i32) -> Self {
+        use Error::*;
+        let res = match lua_int_error_code {
+            lua::ERRMEM => MemoryAllocation,
+            lua::ERRERR => Handler,
+            lua::ERRSYNTAX | lua::ERRRUN | lua::ERRFILE => {
+                let msg = lua_state.to_string(-1);
+                match lua_int_error_code {
+                    lua::ERRSYNTAX => Syntax(msg),
+                    lua::ERRRUN => Runtime(msg),
+                    lua::ERRFILE => File(msg),
+                    _ => unreachable!(),
+                }
+            }
+            _ => Unknown(lua_int_error_code),
+        };
+        lua_state.pop(); // pop the error message
+        res
+    }
 }
 
 impl std::fmt::Display for Error {

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -83,6 +85,7 @@ const void *lua_topointer(lua_State *L, int index);
 void lua_pushnil(lua_State *L);
 void lua_pushnumber(lua_State *L, lua_Number n);
 void lua_pushlstring(lua_State *L, const char *s, size_t len);
+void lua_pushstring(lua_State *L, const char *s);
 void lua_pushcclosure(lua_State *L, lua_CFunction fn, int n);
 void lua_pushboolean(lua_State *L, int b);
 void lua_pushlightuserdata(lua_State *L, void *p);
@@ -125,11 +128,19 @@ int luaL_loadfile(lua_State *L, const char *filename);
 const char *luaL_findtable(lua_State *L, int idx, const char *fname, int szhint); /* Functions to be called by the debugger in specific events */
 int lua_getstack(lua_State *L, int level, lua_Debug *ar);
 int lua_getinfo(lua_State *L, const char *what, lua_Debug *ar);
+int luaL_getmetafield(lua_State *L, int obj, const char *e);
+
+#define abs_index(L, i) \
+    ((i) > 0 || (i) <= LUA_REGISTRYINDEX ? (i) : lua_gettop(L) + (i) + 1)
 
 // This is to pass function pointers from Rust to C
 typedef struct
 {
-    int (*error)(lua_State *L);
+    int (*lua_error)(lua_State *L);
+    void (*lua_pushvalue)(lua_State *L, int index);
+    void (*lua_gettable)(lua_State *L, int index);
+    void (*lua_settable)(lua_State *L, int index);
+
     bool (*rust_function_callback)(lua_State *L, int *result);
     bool (*rust_closure_callback)(lua_State *L, int *result);
-} ApiTable;
+} BridgeCallbacks;
