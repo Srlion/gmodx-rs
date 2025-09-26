@@ -2,7 +2,6 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-changed=bridge.h");
     println!("cargo:rerun-if-changed=bridge.c");
     println!("cargo:rerun-if-changed=lua.h");
 

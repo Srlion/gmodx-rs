@@ -1,10 +1,15 @@
 #[macro_export]
-macro_rules! cstr {
+macro_rules! cstr_to_str {
     ($cstring:expr) => {{
         let cstring_ptr = $cstring;
         let cstr = unsafe { std::ffi::CStr::from_ptr(cstring_ptr) };
         cstr.to_str().expect("Couldn't unwrap CString")
     }};
+}
+
+#[macro_export]
+macro_rules! cstr {
+    ($s:expr) => {{ std::ffi::CString::new($s).expect("CString::new failed") }};
 }
 
 #[macro_export]

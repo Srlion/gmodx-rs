@@ -104,24 +104,24 @@ impl lua::State {
         // gc_mt.__gc = T.__internal_gc
         {
             self.push_cclosure(Some(userdata_gc::<T>), 0);
-            self.raw_set_field(-2, c"__gc");
+            let _ = self.raw_set_field(-2, c"__gc");
         }
 
         // table[INDEX_KEY] = ud_ptr
         self.set_metatable(-2);
-        self.raw_seti(-2, INDEX_KEY);
+        let _ = self.raw_seti(-2, INDEX_KEY);
 
         // local mt = {}
         if self.new_metatable(T::METATABLE_NAME) {
             for (name, func) in T::METHODS {
                 // mt[name] = func
                 self.push_function(*func);
-                self.raw_set_field(-2, name);
+                let _ = self.raw_set_field(-2, name);
             }
 
             // mt.__index = mt
             self.push_value(-1); // Pushes the metatable to the top of the stack
-            self.raw_set_field(-2, c"__index");
+            let _ = self.raw_set_field(-2, c"__index");
         }
 
         // setmetatable(table, mt)
@@ -130,7 +130,7 @@ impl lua::State {
 
     pub fn to_userdata<'a, T: UserData>(self, index: i32) -> Option<&'a mut T> {
         self.check_table(index).ok()?;
-        self.raw_geti(index, INDEX_KEY);
+        self.raw_geti(index, INDEX_KEY).ok()?;
         let tagged = TaggedUserData::<T>::from_ptr(self.direct_to_userdata(-1));
         tagged.map(|t| &mut t.data)
     }

@@ -62,6 +62,8 @@ typedef struct lua_Debug
 
 lua_State *luaL_newstate(void);
 lua_State *lua_newthread(lua_State *);
+void lua_close(lua_State *L);
+void luaL_openlibs(lua_State *L);
 int lua_gettop(lua_State *L);
 void lua_settop(lua_State *L, int index);
 void lua_pushvalue(lua_State *L, int index);
@@ -113,7 +115,6 @@ int lua_status(lua_State *L);
 int lua_error(lua_State *L);
 int lua_next(lua_State *L, int index);
 void lua_concat(lua_State *L, int n);
-void luaL_openlibs(lua_State *L);
 int luaL_callmeta(lua_State *L, int obj, const char *e);
 int luaL_newmetatable(lua_State *L, const char *tname);
 int luaL_ref(lua_State *L, int t);

@@ -41,7 +41,8 @@ lua_CFunction get_gettable_bridge(void) { return &gettable_bridge; }
 
 static int settable_bridge(lua_State *L)
 {
-    callbacks.lua_settable(L, 1);
+    callbacks.lua_settable(L, 1); // This will work correctly now
+
     return 0;
 }
 lua_CFunction get_settable_bridge(void) { return &settable_bridge; }

@@ -68,7 +68,7 @@ impl lua::State {
     }
 
     const CLOSURE_GC_METATABLE_NAME: lua::CStr<'_> = crate::cstr_from_args!(
-        "__gmodx_closure_gc_mt",
+        "__GMODX_CLOSURE_GC_MT",
         env!("CARGO_PKG_VERSION"),
         gmodx_macros::compile_timestamp!()
     );
@@ -103,7 +103,7 @@ impl lua::State {
                 0
             }
             self.push_cclosure(Some(gc_rust_function), 0);
-            self.raw_set_field(-2, c"__gc");
+            let _ = self.raw_set_field(-2, c"__gc");
         }
         self.set_metatable(-2);
 
