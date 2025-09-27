@@ -43,7 +43,9 @@ typedef struct luaL_Reg
     lua_CFunction func;
 } luaL_Reg;
 
-#define LUA_IDSIZE 60
+// Thanks to puffy, I finally can rest after chasing a UB for 3 days with almost no sleep
+// GMOD MODIFIES THIS FROM 60 TO 128 AND FOR THAT WHOLE TIME NO ONE KNEW ABOUT IT
+#define LUA_IDSIZE 128
 typedef struct lua_Debug
 {
     int event;
