@@ -60,7 +60,7 @@ pub fn load_all(l: lua::State) {
 
     let modules = get_sorted_modules();
     for module in &modules {
-        l.set_top(0); // Clear the stack
+        l.set_top(1); // Clear the stack, on gmod13_open, there is a string at index 1
         (module.open)(l);
         #[cfg(debug_assertions)]
         println!(
