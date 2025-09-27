@@ -17,9 +17,6 @@ fn main() {
             .wrap_unsafe_ops(true)
             .dynamic_library_name("LuaShared")
             .dynamic_link_require_all(true)
-            // .override_abi(bindgen::Abi::CUnwind, "lua_CFunction")
-            // Tell cargo to invalidate the built crate whenever any of the
-            // included header files changed.
             .override_abi(bindgen::Abi::CUnwind, "rust_function_callback")
             .override_abi(bindgen::Abi::CUnwind, "rust_closure_callback")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
