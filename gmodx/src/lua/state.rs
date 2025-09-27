@@ -713,7 +713,7 @@ impl State {
         }
     }
 
-    pub fn get_calling_file_name(&self) -> Option<String> {
+    pub fn get_calling_file_name(self) -> Option<String> {
         if let Some(ar) = self.debug_getinfo_at(1, c"S") {
             if ar.source.is_null() {
                 return None;
