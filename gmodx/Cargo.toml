@@ -19,7 +19,7 @@ default = []
 tokio-tasks = ["dep:tokio", "dep:tokio-util"]
 
 [dependencies]
-gmodx-macros = { path = "../gmodx-macros", version = "0.1.0" }
+gmodx-macros = { path = "../gmodx-macros", version = "0.2.0" }
 inventory = "0.3.21"
 libloading = "0.8.9"
 const-str = "0.7.0"
