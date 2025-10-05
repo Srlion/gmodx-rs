@@ -11,7 +11,8 @@ impl Table {
         if !self.has_metatable(state) {
             // If the table has no metatable, we can use rawset directly
             // this is because rawset cannot fail
-            return Ok(self.raw_set(state, key, value));
+            self.raw_set(state, key, value);
+            return Ok(());
         }
 
         // Otherwise, we use the protected version because lua can longjmp if __newindex errors
@@ -124,6 +125,7 @@ impl ToLua for Table {
 
 impl ToLua for &Table {
     fn push_to_stack(self, state: &lua::State) {
+        #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state);
     }
 

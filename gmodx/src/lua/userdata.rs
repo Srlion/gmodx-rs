@@ -70,7 +70,7 @@ impl lua::State {
                 ffi::lua_setfield(self.0, -2, name.as_ptr());
             }
 
-            extern "C-unwind" fn __gc<T: UserData>(state: *mut lua_State) -> i32 {
+            extern "C-unwind" fn __gc(state: *mut lua_State) -> i32 {
                 let l = lua::State(state);
                 let ud_ptr = ffi::lua_touserdata(l.0, -1);
                 OBJECTS.with_borrow_mut(|objects| {
@@ -78,7 +78,7 @@ impl lua::State {
                 });
                 0
             }
-            ffi::lua_pushcclosure(self.0, Some(__gc::<T>), 0);
+            ffi::lua_pushcclosure(self.0, Some(__gc), 0);
             ffi::lua_setfield(self.0, -2, c"__gc".as_ptr());
         }
 
@@ -173,7 +173,7 @@ impl AnyUserData {
         OBJECTS.with_borrow(|objects| {
             objects
                 .get(&self.ptr())
-                .map_or(false, |obj| obj.is::<RefCell<T>>())
+                .is_some_and(|obj| obj.is::<RefCell<T>>())
         })
     }
 
@@ -215,6 +215,7 @@ impl ToLua for AnyUserData {
 
 impl ToLua for &AnyUserData {
     fn push_to_stack(self, state: &lua::State) {
+        #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state);
     }
 

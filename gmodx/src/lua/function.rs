@@ -16,6 +16,7 @@ impl Function {
         args: impl ToLuaMulti,
     ) -> lua::Result<R> {
         let stack_start = ffi::lua_gettop(state.0);
+        #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state); // Push the function onto the stack
         let nargs = args.push_to_stack_multi(state);
         match ffi::lua_pcall(state.0, nargs, ffi::LUA_MULTRET, 0) {
@@ -132,6 +133,7 @@ impl ToLua for Function {
 
 impl ToLua for &Function {
     fn push_to_stack(self, state: &lua::State) {
+        #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state);
     }
 
