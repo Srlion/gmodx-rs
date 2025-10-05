@@ -1,0 +1,17 @@
+[package]
+name = "gmodx-macros"
+version = "0.2.0"
+authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
+edition = "2024"
+license = "MIT"
+description = "Proc macros for gmodx-rs"
+repository = "https://github.com/Srlion/gmodx-rs"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro-crate = "3.4.0"

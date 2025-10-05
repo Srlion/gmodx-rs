@@ -1,0 +1,42 @@
+[package]
+name = "gmodx"
+version = "0.3.1"
+authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
+edition = "2024"
+license = "MIT"
+description = "A swiss army knife for creating binary modules for Garry's Mod in Rust"
+repository = "https://github.com/Srlion/gmodx-rs"
+keywords = ["gmod", "garrysmod", "module", "glua"]
+categories = [
+    "api-bindings",
+    "external-ffi-bindings",
+    "game-development",
+    "development-tools",
+]
+
+[features]
+default = []
+tokio-tasks = ["dep:tokio", "dep:tokio-util"]
+send = []
+
+[dependencies]
+gmodx-macros = { path = "../gmodx-macros", version = "0.2.0" }
+inventory = "0.3.21"
+libloading = "0.8.9"
+const-str = "0.7.0"
+tokio = { version = "1", optional = true, default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+] }
+tokio-util = { version = "0.7", optional = true, default-features = false, features = [
+    "rt",
+] }
+bstr = { version = "1.0", features = ["std"], default-features = false }
+num-traits = "0.2.19"
+rustc-hash = "2.1.1"
+itoa = "1.0.15"
+
+[build-dependencies]
+bindgen = "0.72.1"
+cc = "1.0"
