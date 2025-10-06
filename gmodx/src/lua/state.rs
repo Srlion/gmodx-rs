@@ -54,18 +54,15 @@ impl State {
         let dbg_info = self.debug_getinfo_at(1, c"S")?;
         let source = dbg_info.source?;
         let bytes = source.as_bytes();
-        let path = {
-            #[cfg(unix)]
-            {
-                use std::os::unix::ffi::OsStrExt;
-                OsStr::from_bytes(bytes)
-            }
-            #[cfg(not(unix))]
-            {
-                OsStr::new(String::from_utf8_lossy(bytes).as_ref())
-            }
-        };
-        Some(PathBuf::from(path))
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            Some(PathBuf::from(OsStr::from_bytes(bytes)))
+        }
+        #[cfg(not(unix))]
+        {
+            Some(PathBuf::from(bytes.to_str_lossy().as_ref()))
+        }
     }
 
     pub fn load_buffer(&self, buff: &[u8], name: &CStr) -> lua::Result<Function> {
