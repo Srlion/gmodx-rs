@@ -17,3 +17,6 @@ pub use next_tick_queue::NextTickQueue;
 
 mod next_tick;
 pub use next_tick::{flush_next_tick, next_tick};
+
+#[cfg(feature = "tokio-tasks")]
+pub mod tokio_tasks;
