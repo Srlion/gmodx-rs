@@ -3,9 +3,6 @@ use std::path::PathBuf;
 
 use bstr::ByteSlice;
 
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
-
 use crate::lua::{self, FromLua, Function, Table, ToLua, Value, ffi};
 
 #[repr(transparent)]
@@ -57,11 +54,18 @@ impl State {
         let dbg_info = self.debug_getinfo_at(1, c"S")?;
         let source = dbg_info.source?;
         let bytes = source.as_bytes();
-        if cfg!(unix) {
-            Some(PathBuf::from(OsStr::from_bytes(bytes)))
-        } else {
-            Some(PathBuf::from(String::from_utf8_lossy(bytes).as_ref()))
-        }
+        let path = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                OsStr::from_bytes(bytes)
+            }
+            #[cfg(not(unix))]
+            {
+                OsStr::new(String::from_utf8_lossy(bytes).as_ref())
+            }
+        };
+        Some(PathBuf::from(path))
     }
 
     pub fn load_buffer(&self, buff: &[u8], name: &CStr) -> lua::Result<Function> {
