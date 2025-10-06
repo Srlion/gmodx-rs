@@ -347,3 +347,4 @@ impl_tuple_lua_multi!(A, B, C, D, E, F, G, H, I, J, K, L);
 impl_tuple_lua_multi!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_tuple_lua_multi!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_tuple_lua_multi!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_tuple_lua_multi!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);

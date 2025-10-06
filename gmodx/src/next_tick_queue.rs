@@ -116,7 +116,7 @@ fn create_callback(
     lua_receiver: Arc<LuaReceiver>,
 ) -> Function {
     let timer_name = timer_name.to_string();
-    state.create_function(move |state, ()| {
+    state.create_function(move |state: &lua::State| {
         if lua_receiver.count() == 0 {
             if lua_receiver.is_closed() {
                 #[cfg(debug_assertions)]
@@ -125,12 +125,10 @@ fn create_callback(
                 );
                 remove_timer(state, &timer_name);
             }
-            return Ok(());
+            return;
         }
 
         lua_receiver.flush(state);
-
-        Ok(())
     })
 }
 

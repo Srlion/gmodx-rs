@@ -5,8 +5,9 @@ use std::rc::Rc;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
+use crate::lua::function::IntoLuaFunction;
 use crate::lua::traits::ObjectLike;
-use crate::lua::types::{Callback, MaybeSend};
+use crate::lua::types::Callback;
 use crate::lua::{self, Result, ffi::lua_State};
 use crate::lua::{Error, FromLua, FromLuaMulti, Function, Table, ToLua, ToLuaMulti, Value, ffi};
 
@@ -281,15 +282,11 @@ impl MethodsBuilder {
         Self(Vec::new())
     }
 
-    pub fn add<F, A, R>(&mut self, name: &'static CStr, func: F)
+    pub fn add<F, Marker>(&mut self, name: &'static CStr, func: F)
     where
-        F: Fn(&lua::State, A) -> std::result::Result<R, Box<dyn std::error::Error>>
-            + MaybeSend
-            + 'static,
-        A: FromLuaMulti,
-        R: ToLuaMulti,
+        F: IntoLuaFunction<Marker>,
     {
-        let callback = Function::to_callback(func);
+        let callback = func.into_callback();
         self.0.push((name, callback));
     }
 

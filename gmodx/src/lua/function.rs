@@ -1,4 +1,4 @@
-use std::{ffi::CStr, mem};
+use std::{ffi::CStr, fmt::Display, mem};
 
 use crate::lua::{
     self, FromLuaMulti, ToLuaMulti, Value, ffi,
@@ -26,36 +26,16 @@ impl Function {
         let nresults = ffi::lua_gettop(state.0) - stack_start;
         R::try_from_stack_multi(state, stack_start + 1, nresults).map(|(v, _)| v)
     }
-
-    pub(crate) fn to_callback<F, A, R>(func: F) -> Callback
-    where
-        F: Fn(&lua::State, A) -> std::result::Result<R, Box<dyn std::error::Error>>
-            + MaybeSend
-            + 'static,
-        A: FromLuaMulti,
-        R: ToLuaMulti,
-    {
-        Box::new(move |state: &lua::State| {
-            let nargs = ffi::lua_gettop(state.0);
-            let (args, _) = A::try_from_stack_multi(state, 1, nargs)?;
-            let ret = func(state, args)?;
-            Ok(ret.push_to_stack_multi(state))
-        })
-    }
 }
 
 const CLOSURE_GC_METATABLE_NAME: &CStr = gmodx_macros::unique_id!(cstr);
 
 impl lua::State {
-    pub fn create_function<F, A, R>(&self, func: F) -> Function
+    pub fn create_function<F, Marker>(&self, func: F) -> Function
     where
-        F: Fn(&lua::State, A) -> std::result::Result<R, Box<dyn std::error::Error>>
-            + MaybeSend
-            + 'static,
-        A: FromLuaMulti,
-        R: ToLuaMulti,
+        F: IntoLuaFunction<Marker>,
     {
-        let callback = Function::to_callback(func);
+        let callback = func.into_callback();
         self.create_function_impl(callback)
     }
 
@@ -146,3 +126,82 @@ impl FromLua for Function {
         }
     }
 }
+
+pub trait IntoLuaCallbackResult {
+    type Value: ToLuaMulti;
+    fn into_callback_result(self) -> Result<Self::Value, String>;
+}
+
+impl<T, E> IntoLuaCallbackResult for Result<T, E>
+where
+    T: ToLuaMulti,
+    E: Display,
+{
+    type Value = T;
+    #[inline(always)]
+    fn into_callback_result(self) -> Result<T, String> {
+        self.map_err(|e| e.to_string())
+    }
+}
+
+impl<T> IntoLuaCallbackResult for T
+where
+    T: ToLuaMulti,
+{
+    type Value = Self;
+    #[inline(always)]
+    fn into_callback_result(self) -> Result<Self, String> {
+        Ok(self)
+    }
+}
+
+pub trait IntoLuaFunction<Marker> {
+    fn into_callback(self) -> Callback;
+}
+
+macro_rules! impl_into_lua_function {
+    ($($name:ident),*) => {
+        impl<FF, $($name,)* RR, Ret> IntoLuaFunction<($($name,)*)> for FF
+        where
+            FF: Fn(&lua::State, $($name,)*) -> Ret + MaybeSend + 'static,
+            $($name: FromLuaMulti,)*
+            Ret: IntoLuaCallbackResult<Value = RR>,
+            RR: ToLuaMulti,
+        {
+            fn into_callback(self) -> Callback {
+                #[allow(unused)]
+                #[allow(non_snake_case)]
+                Box::new(move |state: &lua::State| {
+                    let nargs = ffi::lua_gettop(state.0);
+                    let mut index = 1;
+                    let mut remaining = nargs;
+                    $(
+                        let ($name, consumed) = $name::try_from_stack_multi(state, index, remaining)?;
+                        index += consumed;
+                        remaining -= consumed;
+                    )*
+                    let ret = self(state, $($name,)*).into_callback_result()?;
+                    Ok(ret.push_to_stack_multi(state))
+                })
+            }
+        }
+    };
+}
+
+impl_into_lua_function!();
+impl_into_lua_function!(A);
+impl_into_lua_function!(A, B);
+impl_into_lua_function!(A, B, C);
+impl_into_lua_function!(A, B, C, D);
+impl_into_lua_function!(A, B, C, D, E);
+impl_into_lua_function!(A, B, C, D, E, F);
+impl_into_lua_function!(A, B, C, D, E, F, G);
+impl_into_lua_function!(A, B, C, D, E, F, G, H);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_into_lua_function!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
