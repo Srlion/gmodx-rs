@@ -1,4 +1,10 @@
-use std::mem::MaybeUninit;
+use std::ffi::OsStr;
+use std::path::PathBuf;
+
+use bstr::ByteSlice;
+
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 
 use crate::lua::{self, FromLua as _, Table, Value, ffi};
 
@@ -32,25 +38,20 @@ impl State {
         tp_str.to_string_lossy().into_owned()
     }
 
-    pub fn debug_getinfo_at(
-        &self,
-        level: i32,
-        what: impl AsRef<std::ffi::CStr>,
-    ) -> Option<ffi::lua_Debug> {
-        let what = what.as_ref();
-        let mut ar = MaybeUninit::zeroed();
-        if ffi::lua_getstack(self.0, level, ar.as_mut_ptr()) == 0 {
-            return None;
-        }
-        if ffi::lua_getinfo(self.0, what.as_ptr(), ar.as_mut_ptr()) == 0 {
-            return None;
-        }
-        unsafe { Some(ar.assume_init()) }
-    }
-
     pub fn globals(&self) -> Table {
         ffi::lua_pushvalue(self.0, ffi::LUA_GLOBALSINDEX);
         Table(Value::pop_from_stack(self))
+    }
+
+    pub fn caller_source_path(self) -> Option<PathBuf> {
+        let dbg_info = self.debug_getinfo_at(1, c"S")?;
+        let source = dbg_info.source?;
+        let bytes = source.as_bytes();
+        if cfg!(unix) {
+            Some(PathBuf::from(OsStr::from_bytes(bytes)))
+        } else {
+            Some(PathBuf::from(String::from_utf8_lossy(bytes).as_ref()))
+        }
     }
 
     #[cold]

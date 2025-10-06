@@ -32,6 +32,8 @@ pub use function::Function;
 mod userdata;
 pub use userdata::{AnyUserData, MethodsBuilder as Methods, UserData, UserDataRef};
 
+mod debug;
+
 pub(crate) mod private {
     use super::*;
 
