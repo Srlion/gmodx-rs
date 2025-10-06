@@ -6,7 +6,7 @@ use bstr::ByteSlice;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
-use crate::lua::{self, FromLua as _, Table, Value, ffi};
+use crate::lua::{self, FromLua, Table, ToLua, Value, ffi};
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
@@ -41,6 +41,16 @@ impl State {
     pub fn globals(&self) -> Table {
         ffi::lua_pushvalue(self.0, ffi::LUA_GLOBALSINDEX);
         Table(Value::pop_from_stack(self))
+    }
+
+    #[inline]
+    pub fn set_global<K: ToLua>(&self, key: impl ToLua, value: impl ToLua) -> lua::Result<()> {
+        self.globals().set(self, key, value)
+    }
+
+    #[inline]
+    pub fn get_global<V: FromLua>(&self, key: impl ToLua) -> lua::Result<V> {
+        self.globals().get(self, key)
     }
 
     pub fn caller_source_path(self) -> Option<PathBuf> {
