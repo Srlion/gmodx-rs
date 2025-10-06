@@ -36,7 +36,7 @@ pub trait UserData: 'static {
                 .or_insert_with(|| {
                     let cstring = CString::new(format!(
                         "{}_{:?}",
-                        gmodx_macros::userdata_unique_id!(),
+                        gmodx_macros::unique_id!(),
                         std::any::TypeId::of::<Self>()
                     ))
                     .unwrap();

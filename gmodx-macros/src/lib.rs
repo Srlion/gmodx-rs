@@ -156,41 +156,25 @@ fn check_gmod13_function(input: &mut ItemFn, expected_name: &str) {
     }
 }
 
-#[proc_macro]
-pub fn compile_timestamp(_input: TokenStream) -> TokenStream {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-
-    let expanded = quote! {
-        #timestamp
-    };
-
-    TokenStream::from(expanded)
-}
-
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[proc_macro]
-pub fn userdata_unique_id(_: TokenStream) -> TokenStream {
+pub fn unique_id(input: TokenStream) -> TokenStream {
     let unique_str = {
         let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis();
+            .as_nanos();
 
         let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
-        format!(
-            "__GMODX_CLOSURE_GC_MT_{}_{}_{}",
-            version, timestamp, counter
-        )
+        format!("__GMODX_UNIQUE_ID_{}_{}_{}", version, timestamp, counter)
     };
-
-    let expanded = quote! {
-        #unique_str
-    };
-
-    TokenStream::from(expanded)
+    let input_str = input.to_string();
+    let is_c_string = input_str.trim() == "cstr";
+    if is_c_string {
+        format!("c\"{}\"", unique_str).parse().unwrap()
+    } else {
+        format!("\"{}\"", unique_str).parse().unwrap()
+    }
 }

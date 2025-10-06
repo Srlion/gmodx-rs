@@ -44,11 +44,7 @@ impl Function {
     }
 }
 
-const CLOSURE_GC_METATABLE_NAME: &CStr = cstr_from_args!(
-    "__GMODX_CLOSURE_GC_MT",
-    env!("CARGO_PKG_VERSION"),
-    gmodx_macros::compile_timestamp!()
-);
+const CLOSURE_GC_METATABLE_NAME: &CStr = gmodx_macros::unique_id!(cstr);
 
 impl lua::State {
     pub fn create_function<F, A, R>(&self, func: F) -> Function

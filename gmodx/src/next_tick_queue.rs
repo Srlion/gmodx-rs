@@ -1,5 +1,4 @@
-use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
 use crate::lua::{self, Function, ObjectLike as _, Table, ffi};
@@ -8,10 +7,7 @@ type CallbackBoxed = Box<dyn FnOnce(&lua::State) + Send>;
 
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-fn next_id() -> usize {
-    ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
+// We use counter/is_closed for fast checking inside the timer callback, this is because it's called A lot
 #[derive(Debug)]
 struct LuaReceiver {
     rx: Mutex<mpsc::Receiver<CallbackBoxed>>,
@@ -74,7 +70,11 @@ impl NextTickQueue {
             let lua_receiver = lua_receiver.clone();
 
             move |state: &lua::State| {
-                let timer_name = format!("__GMODX_LUA_THINK_{}", next_id());
+                let timer_name = format!(
+                    "{}-{}",
+                    gmodx_macros::unique_id!(),
+                    ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+                );
                 let callback = create_callback(state, &timer_name, lua_receiver);
                 create_timer(state, &timer_name, &callback);
             }
