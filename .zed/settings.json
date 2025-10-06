@@ -4,7 +4,7 @@
       "initialization_options": {
         "cargo": {
           "features": [
-            "tokio-tasks"
+            // "tokio-tasks",
             //
             // "send"
           ]

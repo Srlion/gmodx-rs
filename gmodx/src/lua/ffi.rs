@@ -373,3 +373,13 @@ pub fn lua_getstack(L: *mut lua_State, level: i32, ar: *mut lua_Debug) -> i32 {
 pub fn lua_getinfo(L: *mut lua_State, what: *const i8, ar: *mut lua_Debug) -> i32 {
     unsafe { FFI.lua_getinfo(L, what, ar) }
 }
+
+#[inline(always)]
+pub fn luaL_loadbuffer(
+    L: *mut lua_State,
+    buff: *const ::std::os::raw::c_char,
+    sz: usize,
+    name: *const ::std::os::raw::c_char,
+) -> i32 {
+    unsafe { FFI.luaL_loadbuffer(L, buff, sz, name) }
+}

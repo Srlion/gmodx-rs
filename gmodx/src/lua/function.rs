@@ -1,7 +1,7 @@
 use std::{ffi::CStr, fmt::Display, mem};
 
 use crate::lua::{
-    self, FromLuaMulti, ToLuaMulti, Value, ffi,
+    self, FromLuaMulti, StackGuard, ToLuaMulti, Value, ffi,
     traits::{FromLua, ToLua},
     types::{Callback, MaybeSend},
 };
@@ -16,6 +16,7 @@ impl Function {
         args: impl ToLuaMulti,
     ) -> lua::Result<R> {
         let stack_start = ffi::lua_gettop(state.0);
+        let _sg = StackGuard::with_top(state.0, stack_start);
         #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state); // Push the function onto the stack
         let nargs = args.push_to_stack_multi(state);
@@ -25,6 +26,19 @@ impl Function {
         }
         let nresults = ffi::lua_gettop(state.0) - stack_start;
         R::try_from_stack_multi(state, stack_start + 1, nresults).map(|(v, _)| v)
+    }
+
+    /// Same as [`call`], but logs any errors that occur.
+    pub fn call_logged<R: FromLuaMulti>(
+        &self,
+        state: &lua::State,
+        args: impl ToLuaMulti,
+    ) -> lua::Result<R> {
+        let res = self.call(state, args);
+        if let Err(err) = &res {
+            state.error_no_halt_with_stack(&err.to_string());
+        }
+        res
     }
 }
 

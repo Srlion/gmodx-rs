@@ -61,9 +61,7 @@ fn get_max_worker_threads(state: &lua::State) -> Option<u16> {
         )
         .ok()?;
 
-    let res = convar.call_method::<u16>(state, "GetInt", ()).ok();
-    state.dump_stack();
-    res
+    convar.call_method::<u16>(state, "GetInt", ()).ok()
 }
 
 fn get_graceful_shutdown_timeout(state: &lua::State) -> Option<u16> {
@@ -88,9 +86,7 @@ fn get_graceful_shutdown_timeout(state: &lua::State) -> Option<u16> {
         )
         .ok()?;
 
-    let res = convar.call_method::<u16>(state, "GetInt", ()).ok();
-    state.dump_stack();
-    res
+    convar.call_method::<u16>(state, "GetInt", ()).ok()
 }
 
 inventory::submit! {

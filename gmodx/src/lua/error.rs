@@ -1,4 +1,4 @@
-use crate::lua::{self, ffi, traits::FromLua};
+use crate::lua::{self, Function, ffi, traits::FromLua};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -58,6 +58,21 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 impl lua::State {
+    pub fn error_no_halt(&self, err: &str) {
+        let formatted = format!("[ERROR] {}\n", err);
+        self.call_error_handler("ErrorNoHalt", &formatted);
+    }
+
+    pub fn error_no_halt_with_stack(&self, err: &str) {
+        self.call_error_handler("ErrorNoHaltWithStack", err);
+    }
+
+    fn call_error_handler(&self, func_name: &str, message: &str) {
+        self.get_global::<Function>(func_name)
+            .and_then(|func| func.call::<()>(self, message))
+            .unwrap_or_else(|_| eprint!("{}", message));
+    }
+
     pub(crate) fn pop_error(&self, err_code: i32) -> Error {
         gmodx_debug_assert!(
             err_code != ffi::LUA_OK && err_code != ffi::LUA_YIELD,

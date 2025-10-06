@@ -9,7 +9,7 @@ mod conversion;
 mod value_ref;
 
 mod types;
-pub use types::{LightUserData, Number, String};
+pub use types::{LightUserData, Nil, Number, String};
 
 mod value;
 pub use value::{MultiValue, Value};

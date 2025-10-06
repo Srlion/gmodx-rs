@@ -20,3 +20,5 @@ pub use next_tick::{flush_next_tick, next_tick};
 
 #[cfg(feature = "tokio-tasks")]
 pub mod tokio_tasks;
+
+pub use bstr;

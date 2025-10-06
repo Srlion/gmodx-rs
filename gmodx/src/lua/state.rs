@@ -1,4 +1,4 @@
-use std::ffi::OsStr;
+use std::ffi::{CStr, OsStr};
 use std::path::PathBuf;
 
 use bstr::ByteSlice;
@@ -6,7 +6,7 @@ use bstr::ByteSlice;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
-use crate::lua::{self, FromLua, Table, ToLua, Value, ffi};
+use crate::lua::{self, FromLua, Function, Table, ToLua, Value, ffi};
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl State {
     }
 
     #[inline]
-    pub fn set_global<K: ToLua>(&self, key: impl ToLua, value: impl ToLua) -> lua::Result<()> {
+    pub fn set_global(&self, key: impl ToLua, value: impl ToLua) -> lua::Result<()> {
         self.globals().set(self, key, value)
     }
 
@@ -53,7 +53,7 @@ impl State {
         self.globals().get(self, key)
     }
 
-    pub fn caller_source_path(self) -> Option<PathBuf> {
+    pub fn caller_source_path(&self) -> Option<PathBuf> {
         let dbg_info = self.debug_getinfo_at(1, c"S")?;
         let source = dbg_info.source?;
         let bytes = source.as_bytes();
@@ -61,6 +61,19 @@ impl State {
             Some(PathBuf::from(OsStr::from_bytes(bytes)))
         } else {
             Some(PathBuf::from(String::from_utf8_lossy(bytes).as_ref()))
+        }
+    }
+
+    pub fn load_buffer(&self, buff: &[u8], name: &CStr) -> lua::Result<Function> {
+        let chunk = ffi::luaL_loadbuffer(
+            self.0,
+            buff.as_ptr() as *const i8,
+            buff.len(),
+            name.as_ptr(),
+        );
+        match chunk {
+            ffi::LUA_OK => Ok(Function(Value::pop_from_stack(self))),
+            res => Err(self.pop_error(res)),
         }
     }
 
