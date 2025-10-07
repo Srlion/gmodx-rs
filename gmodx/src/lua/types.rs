@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use crate::lua;
 
-pub struct Nil;
+pub type Nil = ();
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct LightUserData(pub *mut c_void);

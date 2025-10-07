@@ -5,7 +5,6 @@ use bstr::{BStr, BString};
 use num_traits::cast;
 
 use crate::lua::traits::{FromLua, ToLua};
-use crate::lua::types::Nil;
 use crate::lua::{self, Error, FromLuaMulti, LightUserData, Result, ToLuaMulti, ffi};
 
 impl<T: ToLua> ToLua for Option<T> {
@@ -29,18 +28,20 @@ impl<T: FromLua> FromLua for Option<T> {
     }
 }
 
-impl ToLua for Nil {
+// Even though () means no value in Rust, we need to make it "nil"
+// This is because working with a type that is zero size with lua is so cringe
+impl ToLua for () {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
         ffi::lua_pushnil(state.0);
     }
 }
 
-impl FromLua for Nil {
+impl FromLua for () {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         match ffi::lua_type(state.0, index) {
-            ffi::LUA_TNIL => Ok(Nil),
+            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(()),
             _ => Err(state.type_error(index, "nil")),
         }
     }
@@ -295,18 +296,6 @@ impl_lua_number_big!(unsigned: u64, u128);
 impl_lua_number_big!(signed: isize);
 #[cfg(target_pointer_width = "64")]
 impl_lua_number_big!(unsigned: usize);
-
-impl ToLuaMulti for () {
-    fn push_to_stack_multi(self, _: &lua::State) -> i32 {
-        0
-    }
-}
-
-impl FromLuaMulti for () {
-    fn try_from_stack_multi(_: &lua::State, _: i32, _: i32) -> Result<(Self, i32)> {
-        Ok(((), 0))
-    }
-}
 
 macro_rules! impl_tuple_lua_multi {
     ($($name:ident),+) => {
