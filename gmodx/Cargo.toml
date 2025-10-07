@@ -1,6 +1,6 @@
 [package]
 name = "gmodx"
-version = "0.6.3"
+version = "0.7.0"
 authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
 edition = "2024"
 license = "MIT"
