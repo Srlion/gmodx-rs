@@ -1,5 +1,6 @@
 use std::{
     collections::{VecDeque, vec_deque},
+    fmt,
     ops::{Deref, DerefMut},
 };
 
@@ -29,6 +30,29 @@ pub enum ValueKind {
     UserData,
     Thread,
     Unknown,
+}
+
+impl ValueKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ValueKind::Nil => "nil",
+            ValueKind::Bool => "boolean",
+            ValueKind::LightUserData => "lightuserdata",
+            ValueKind::Number => "number",
+            ValueKind::String => "string",
+            ValueKind::Table => "table",
+            ValueKind::Function => "function",
+            ValueKind::UserData => "userdata",
+            ValueKind::Thread => "thread",
+            ValueKind::Unknown => "unknown",
+        }
+    }
+}
+
+impl fmt::Display for ValueKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 impl Value {
@@ -64,6 +88,10 @@ impl Value {
         }
     }
 
+    pub fn type_name(&self) -> &'static str {
+        self.type_kind().as_str()
+    }
+
     pub fn push_to_stack(&self, state: &lua::State) {
         self.inner.push(state);
     }
@@ -74,6 +102,12 @@ impl Value {
 
     pub(crate) fn thread(&self) -> lua::State {
         self.inner.thread()
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Value of type {} ({})", self.type_name(), self.type_id())
     }
 }
 
