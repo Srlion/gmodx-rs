@@ -12,7 +12,7 @@ mod types;
 pub use types::{LightUserData, Number, String};
 
 mod value;
-pub use value::{MultiValue, Value};
+pub use value::{MultiValue, Value, ValueKind};
 
 mod error;
 pub use error::{Error, Result};

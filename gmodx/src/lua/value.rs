@@ -17,6 +17,20 @@ pub struct Value {
     pub(crate) inner: ValueRef,
 }
 
+#[derive(Debug)]
+pub enum ValueKind {
+    Nil,
+    Bool,
+    LightUserData,
+    Number,
+    String,
+    Table,
+    Function,
+    UserData,
+    Thread,
+    Unknown,
+}
+
 impl Value {
     pub fn from_stack(state: &lua::State, index: i32) -> Self {
         ffi::lua_pushvalue(state.0, index);
@@ -33,6 +47,21 @@ impl Value {
 
     pub fn type_id(&self) -> i32 {
         self.type_id
+    }
+
+    pub fn type_kind(&self) -> ValueKind {
+        match self.type_id {
+            ffi::LUA_TNIL | ffi::LUA_TNONE => ValueKind::Nil,
+            ffi::LUA_TBOOLEAN => ValueKind::Bool,
+            ffi::LUA_TLIGHTUSERDATA => ValueKind::LightUserData,
+            ffi::LUA_TNUMBER => ValueKind::Number,
+            ffi::LUA_TSTRING => ValueKind::String,
+            ffi::LUA_TTABLE => ValueKind::Table,
+            ffi::LUA_TFUNCTION => ValueKind::Function,
+            ffi::LUA_TUSERDATA => ValueKind::UserData,
+            ffi::LUA_TTHREAD => ValueKind::Thread,
+            _ => ValueKind::Unknown,
+        }
     }
 
     pub fn push_to_stack(&self, state: &lua::State) {
