@@ -303,3 +303,29 @@ impl IntoIterator for MethodsBuilder {
         self.0.into_iter()
     }
 }
+
+pub struct TypedUserData<T: UserData>(pub AnyUserData, std::marker::PhantomData<T>);
+
+impl<T: UserData> FromLua for TypedUserData<T> {
+    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+        let any = AnyUserData::from_stack_with_type(state, index, T::name())?;
+        // Type check it
+        any.downcast::<T>(state)
+            .ok_or_else(|| state.type_error(index, T::name()))?;
+        Ok(TypedUserData(any, std::marker::PhantomData))
+    }
+}
+
+impl<T: UserData> std::ops::Deref for TypedUserData<T> {
+    type Target = AnyUserData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: UserData> std::ops::DerefMut for TypedUserData<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}

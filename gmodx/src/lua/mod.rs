@@ -30,7 +30,7 @@ mod function;
 pub use function::Function;
 
 mod userdata;
-pub use userdata::{AnyUserData, MethodsBuilder as Methods, UserData, UserDataRef};
+pub use userdata::{AnyUserData, MethodsBuilder as Methods, TypedUserData, UserData, UserDataRef};
 
 mod debug;
 
