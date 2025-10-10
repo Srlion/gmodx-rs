@@ -78,6 +78,16 @@ impl Table {
         }
     }
 
+    pub fn set_metatable(&self, _: &lua::State, metatable: Option<Table>) {
+        let ref_thread = self.0.thread().0;
+        if let Some(metatable) = &metatable {
+            ffi::lua_pushvalue(ref_thread, metatable.0.index());
+        } else {
+            ffi::lua_pushnil(ref_thread);
+        }
+        ffi::lua_setmetatable(ref_thread, self.0.index());
+    }
+
     pub(crate) fn set_protected(
         &self,
         state: &lua::State,
