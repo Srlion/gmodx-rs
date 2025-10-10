@@ -92,6 +92,10 @@ impl Value {
         self.type_kind().as_str()
     }
 
+    pub fn to<T: FromLua>(self, state: &lua::State) -> Result<T> {
+        T::try_from_value(self, state)
+    }
+
     pub fn push_to_stack(&self, state: &lua::State) {
         self.inner.push(state);
     }
