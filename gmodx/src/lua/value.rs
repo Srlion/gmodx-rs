@@ -175,12 +175,10 @@ impl IntoIterator for MultiValue {
 }
 
 impl ToLuaMulti for MultiValue {
-    fn push_to_stack_multi(self, state: &lua::State) -> i32 {
-        let count = self.len() as i32;
+    fn push_to_stack_multi(self, state: &lua::State) {
         for value in self {
             value.push_to_stack(state);
         }
-        count
     }
 }
 

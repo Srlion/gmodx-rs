@@ -1,4 +1,4 @@
-use crate::lua::{self, Result, Value, private::Sealed};
+use crate::lua::{self, Result, Value, ffi, private::Sealed};
 
 pub trait ToLua: Sized {
     /// Pushes the value onto the Lua stack.
@@ -21,13 +21,17 @@ pub trait FromLua: Sized {
 }
 
 pub trait ToLuaMulti: Sized {
-    fn push_to_stack_multi(self, state: &lua::State) -> i32;
+    fn push_to_stack_multi(self, state: &lua::State);
+    fn push_to_stack_multi_count(self, state: &lua::State) -> i32 {
+        let base = ffi::lua_gettop(state.0);
+        self.push_to_stack_multi(state);
+        ffi::lua_gettop(state.0) - base
+    }
 }
 
 impl<T: ToLua> ToLuaMulti for T {
-    fn push_to_stack_multi(self, state: &lua::State) -> i32 {
+    fn push_to_stack_multi(self, state: &lua::State) {
         self.push_to_stack(state);
-        1
     }
 }
 

@@ -304,14 +304,12 @@ macro_rules! impl_tuple_lua_multi {
             $($name: ToLuaMulti,)+
         {
             #[inline]
-            fn push_to_stack_multi(self, state: &lua::State) -> i32 {
+            fn push_to_stack_multi(self, state: &lua::State) {
                 #[allow(non_snake_case)]
                 let ($($name,)+) = self;
-                let mut count = 0;
                 $(
-                    count += $name.push_to_stack_multi(state);
+                    $name.push_to_stack_multi(state);
                 )+
-                count
             }
         }
 

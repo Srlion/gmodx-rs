@@ -19,7 +19,8 @@ impl Function {
         let _sg = StackGuard::with_top(state.0, stack_start);
         #[allow(clippy::needless_borrow)]
         (&self.0).push_to_stack(state); // Push the function onto the stack
-        let nargs = args.push_to_stack_multi(state);
+        args.push_to_stack_multi(state);
+        let nargs = ffi::lua_gettop(state.0) - stack_start - 1;
         match ffi::lua_pcall(state.0, nargs, ffi::LUA_MULTRET, 0) {
             ffi::LUA_OK => {}
             res => return Err(state.pop_error(res)),
@@ -195,7 +196,7 @@ macro_rules! impl_into_lua_function {
                         remaining -= consumed;
                     )*
                     let ret = self(state, $($name,)*).into_callback_result()?;
-                    Ok(ret.push_to_stack_multi(state))
+                    Ok(ret.push_to_stack_multi_count(state))
                 })
             }
         }
