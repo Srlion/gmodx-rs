@@ -27,6 +27,11 @@ impl Table {
         self.get_protected(state, key)
     }
 
+    // TODO: should make it call __len, lua 5.1 does not invoke __len, has to be implemented manually
+    pub fn len(&self, state: &lua::State) -> Result<usize> {
+        self.raw_len(state)
+    }
+
     pub fn raw_set(&self, state: &lua::State, key: impl ToLua, value: impl ToLua) {
         let _sg = state.stack_guard();
 
@@ -46,6 +51,15 @@ impl Table {
         V::try_from_stack(state, -1)
     }
 
+    pub fn raw_len(&self, state: &lua::State) -> Result<usize> {
+        let _sg = state.stack_guard();
+
+        self.push_to_stack(state); // push the table
+        ffi::lua_rawlen(state.0, -1);
+
+        usize::try_from_stack(state, -1)
+    }
+
     // the lua state is only used to ensure we are on main thread
     pub fn has_metatable(&self, _: &lua::State) -> bool {
         let thread = self.0.thread();
@@ -55,6 +69,26 @@ impl Table {
             ffi::lua_pop(thread.0, 1); // pop the metatable
             true
         }
+    }
+
+    pub fn for_eachi<V: FromLua>(
+        &self,
+        state: &lua::State,
+        mut callback: impl FnMut(usize, V),
+    ) -> Result<()> {
+        let _sg = state.stack_guard();
+
+        self.push_to_stack(state); // push the table
+
+        let len = ffi::lua_rawlen(state.0, -1);
+        for i in 1..=len {
+            ffi::lua_rawgeti(state.0, -1, i as i32);
+            let v = V::try_from_stack(state, -1)?;
+            ffi::lua_pop(state.0, 1); // pop the value
+            callback(i, v);
+        }
+
+        Ok(())
     }
 
     pub(crate) fn set_protected(
