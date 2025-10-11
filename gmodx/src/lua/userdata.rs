@@ -46,6 +46,30 @@ pub trait UserData: 'static {
                 .clone()
         })
     }
+
+    /// By default we lazily initialize the methods table.
+    /// Use this function to initialize the methods table before it is used.
+    fn init_methods_table(state: &lua::State)
+    where
+        Self: Sized,
+    {
+        push_methods_table::<Self>(state);
+        ffi::lua_pop(state.0, 1); // Pop the methods table
+    }
+}
+
+fn push_methods_table<T: UserData>(state: &lua::State) {
+    if ffi::luaL_newmetatable(state.0, T::unique_id().as_ptr()) {
+        let methods = {
+            let mut mb = MethodsBuilder::new();
+            T::methods(&mut mb);
+            mb.build()
+        };
+        for (name, func) in methods.into_iter() {
+            state.create_function_impl(func).push_to_stack(state);
+            ffi::lua_setfield(state.0, -2, name.as_ptr());
+        }
+    }
 }
 
 impl lua::State {
@@ -90,17 +114,7 @@ impl lua::State {
         ffi::lua_createtable(self.0, 0, 1);
 
         // Methods table: 5
-        if ffi::luaL_newmetatable(self.0, T::unique_id().as_ptr()) {
-            let methods = {
-                let mut mb = MethodsBuilder::new();
-                T::methods(&mut mb);
-                mb.build()
-            };
-            for (name, func) in methods.into_iter() {
-                self.create_function_impl(func).push_to_stack(self);
-                ffi::lua_setfield(self.0, -2, name.as_ptr());
-            }
-        }
+        push_methods_table::<T>(self);
 
         // Set methods table as __index of store's metatable
         ffi::lua_setfield(self.0, -2, c"__index".as_ptr()); // pops methods table
