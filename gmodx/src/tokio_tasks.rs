@@ -7,14 +7,57 @@ use tokio_util::task::TaskTracker;
 
 use crate::lua::{self, AnyUserData, ObjectLike as _, Value};
 
-const DEFAULT_MAX_WORKER_THREADS: u16 = 2;
-const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u16 = 20;
+static DEFAULT_ASYNC_THREADS_COUNT: usize = 1;
+static DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u64 = 20;
+
+#[derive(Debug, Clone)]
+pub enum RuntimeEvent {
+    Starting {
+        thread_count: usize,
+    },
+    ShuttingDown {
+        timeout_secs: u64,
+        pending_tasks: usize,
+    },
+    ShutdownComplete,
+    ShutdownTimeout,
+}
+
+type EventCallback = Box<dyn Fn(RuntimeEvent) + Send + Sync>;
+
+struct EventEmitter {
+    callbacks: Vec<EventCallback>,
+}
+
+impl EventEmitter {
+    fn register(&mut self, callback: impl Fn(RuntimeEvent) + Send + Sync + 'static) {
+        self.callbacks.push(Box::new(callback));
+    }
+
+    fn emit(&self, event: RuntimeEvent) {
+        for callback in &self.callbacks {
+            callback(event.clone());
+        }
+    }
+}
+
+static EVENTS: Mutex<EventEmitter> = Mutex::new(EventEmitter {
+    callbacks: Vec::new(),
+});
+
+pub fn on_event(callback: impl Fn(RuntimeEvent) + Send + Sync + 'static) {
+    EVENTS.lock().unwrap().register(callback);
+}
+
+fn emit_event(event: RuntimeEvent) {
+    EVENTS.lock().unwrap().emit(event);
+}
 
 struct TokioState {
     runtime: Runtime,
     handle: Handle,
     tracker: TaskTracker,
-    graceful_shutdown_timeout: u16,
+    graceful_shutdown_timeout: u64,
 }
 
 static STATE: Mutex<Option<TokioState>> = Mutex::new(None);
@@ -39,7 +82,7 @@ where
     Some(s.handle.spawn(fut))
 }
 
-fn get_max_worker_threads(state: &lua::State) -> Option<u16> {
+fn load_threads_from_convar(state: &lua::State) -> Option<usize> {
     let globals = state.globals();
 
     let flags = state.create_table();
@@ -53,18 +96,18 @@ fn get_max_worker_threads(state: &lua::State) -> Option<u16> {
             state,
             "CreateConVar",
             (
-                "GMODX_WORKER_THREADS",
-                DEFAULT_MAX_WORKER_THREADS,
+                "GMODX_ASYNC_THREADS",
+                DEFAULT_ASYNC_THREADS_COUNT,
                 flags,
-                "Number of worker threads for async runtime",
+                "Number of async threads",
             ),
         )
         .ok()?;
 
-    convar.call_method::<u16>(state, "GetInt", ()).ok()
+    convar.call_method(state, "GetInt", ()).ok()
 }
 
-fn get_graceful_shutdown_timeout(state: &lua::State) -> Option<u16> {
+fn load_timeout_from_convar(state: &lua::State) -> Option<u64> {
     let globals = state.globals();
 
     let flags = state.create_table();
@@ -86,7 +129,7 @@ fn get_graceful_shutdown_timeout(state: &lua::State) -> Option<u16> {
         )
         .ok()?;
 
-    convar.call_method::<u16>(state, "GetInt", ()).ok()
+    convar.call_method(state, "GetInt", ()).ok()
 }
 
 inventory::submit! {
@@ -94,11 +137,13 @@ inventory::submit! {
         3,
         "tokio_tasks",
         |state| {
-            let worker_threads = get_max_worker_threads(state).unwrap_or(DEFAULT_MAX_WORKER_THREADS) ;
-            let graceful_shutdown_timeout = get_graceful_shutdown_timeout(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT);
+            let thread_count = load_threads_from_convar(state).unwrap_or(DEFAULT_ASYNC_THREADS_COUNT).min(1);
+            let graceful_shutdown_timeout = load_timeout_from_convar(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT).min(1);
+
+            emit_event(RuntimeEvent::Starting { thread_count });
 
             let runtime = Builder::new_multi_thread()
-                .worker_threads(worker_threads as usize)
+                .worker_threads(thread_count)
                 .enable_all()
                 .thread_name(format!("gmodx-rs:{}", env!("CARGO_PKG_VERSION")))
                 .build()
@@ -122,15 +167,25 @@ inventory::submit! {
             };
             let Some(s) = s else { return };
 
-            let timeout = Duration::from_secs(s.graceful_shutdown_timeout as u64);
+            let timeout_secs = Duration::from_secs(s.graceful_shutdown_timeout);
+
+            emit_event(RuntimeEvent::ShuttingDown {
+                timeout_secs: s.graceful_shutdown_timeout,
+                pending_tasks: s.tracker.len()
+            });
 
             // close new task intake and wait for tracked tasks to finish (with timeout)
             s.tracker.close();
-            let _ = s
+            let wait_result = s
                 .runtime
-                .block_on(async { tokio::time::timeout(timeout, s.tracker.wait()).await });
+                .block_on(async { tokio::time::timeout(timeout_secs, s.tracker.wait()).await });
 
-            s.runtime.shutdown_timeout(timeout);
+            s.runtime.shutdown_timeout(timeout_secs);
+
+            match wait_result {
+                Ok(_) => emit_event(RuntimeEvent::ShutdownComplete),
+                Err(_) => emit_event(RuntimeEvent::ShutdownTimeout)
+            }
         },
     )
 }
