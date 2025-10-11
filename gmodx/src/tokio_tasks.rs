@@ -25,38 +25,23 @@ pub enum RuntimeEvent {
 
 type EventCallback = Box<dyn Fn(RuntimeEvent) + Send + Sync>;
 
-struct EventEmitter {
-    callbacks: Vec<EventCallback>,
-}
-
-impl EventEmitter {
-    fn register(&mut self, callback: impl Fn(RuntimeEvent) + Send + Sync + 'static) {
-        self.callbacks.push(Box::new(callback));
-    }
-
-    fn emit(&self, event: RuntimeEvent) {
-        for callback in &self.callbacks {
-            callback(event.clone());
-        }
-    }
-}
-
-static EVENTS: Mutex<EventEmitter> = Mutex::new(EventEmitter {
-    callbacks: Vec::new(),
-});
+static EVENTS: Mutex<Vec<EventCallback>> = Mutex::new(Vec::new());
 
 pub fn on_event(callback: impl Fn(RuntimeEvent) + Send + Sync + 'static) {
-    EVENTS.lock().unwrap().register(callback);
-    let g = STATE.lock().unwrap();
-    if let Some(s) = g.as_ref() {
+    EVENTS.lock().unwrap().push(Box::new(callback));
+
+    // Emit Started event if runtime is already initialized
+    if let Some(state) = STATE.lock().unwrap().as_ref() {
         emit_event(RuntimeEvent::Started {
-            thread_count: s.thread_count,
+            thread_count: state.thread_count,
         });
     }
 }
 
 fn emit_event(event: RuntimeEvent) {
-    EVENTS.lock().unwrap().emit(event);
+    for callback in EVENTS.lock().unwrap().iter() {
+        callback(event.clone());
+    }
 }
 
 struct TokioState {
@@ -139,59 +124,64 @@ fn load_timeout_from_convar(state: &lua::State) -> Option<u64> {
     convar.call_method(state, "GetInt", ()).ok()
 }
 
+fn initialize(state: &lua::State) {
+    let thread_count = load_threads_from_convar(state)
+        .unwrap_or(DEFAULT_ASYNC_THREADS_COUNT)
+        .max(1);
+    let graceful_shutdown_timeout = load_timeout_from_convar(state)
+        .unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT)
+        .max(1);
+
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(thread_count)
+        .enable_all()
+        .thread_name(format!("gmodx-rs:{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("failed to build tokio runtime");
+
+    let tracker = TaskTracker::new();
+
+    let mut g = STATE.lock().unwrap();
+    *g = Some(TokioState {
+        handle: runtime.handle().clone(),
+        runtime,
+        tracker,
+        graceful_shutdown_timeout,
+        thread_count,
+    });
+}
+
+fn shutdown(_: &lua::State) {
+    // take ownership so we can drop everything cleanly after shutdown
+    let s = {
+        let mut g = STATE.lock().unwrap();
+        g.take()
+    };
+    let Some(s) = s else { return };
+
+    let timeout_secs = Duration::from_secs(s.graceful_shutdown_timeout);
+
+    emit_event(RuntimeEvent::ShuttingDown {
+        timeout_secs: s.graceful_shutdown_timeout,
+        pending_tasks: s.tracker.len(),
+    });
+
+    // close new task intake and wait for tracked tasks to finish (with timeout)
+    s.tracker.close();
+    let wait_result = s
+        .runtime
+        .block_on(async { tokio::time::timeout(timeout_secs, s.tracker.wait()).await });
+
+    s.runtime.shutdown_timeout(timeout_secs);
+
+    match wait_result {
+        Ok(_) => emit_event(RuntimeEvent::ShutdownComplete),
+        Err(_) => emit_event(RuntimeEvent::ShutdownTimeout),
+    }
+
+    EVENTS.lock().unwrap().clear();
+}
+
 inventory::submit! {
-    crate::open_close::new(
-        3,
-        "tokio_tasks",
-        |state| {
-            let thread_count = load_threads_from_convar(state).unwrap_or(DEFAULT_ASYNC_THREADS_COUNT).max(1);
-            let graceful_shutdown_timeout = load_timeout_from_convar(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT).max(1);
-
-            let runtime = Builder::new_multi_thread()
-                .worker_threads(thread_count)
-                .enable_all()
-                .thread_name(format!("gmodx-rs:{}", env!("CARGO_PKG_VERSION")))
-                .build()
-                .expect("failed to build tokio runtime");
-
-            let tracker = TaskTracker::new();
-
-            let mut g = STATE.lock().unwrap();
-            *g = Some(TokioState {
-                handle: runtime.handle().clone(),
-                runtime,
-                tracker,
-                graceful_shutdown_timeout,
-                thread_count,
-            });
-        },
-        |_| {
-            // take ownership so we can drop everything cleanly after shutdown
-            let s = {
-                let mut g = STATE.lock().unwrap();
-                g.take()
-            };
-            let Some(s) = s else { return };
-
-            let timeout_secs = Duration::from_secs(s.graceful_shutdown_timeout);
-
-            emit_event(RuntimeEvent::ShuttingDown {
-                timeout_secs: s.graceful_shutdown_timeout,
-                pending_tasks: s.tracker.len()
-            });
-
-            // close new task intake and wait for tracked tasks to finish (with timeout)
-            s.tracker.close();
-            let wait_result = s
-                .runtime
-                .block_on(async { tokio::time::timeout(timeout_secs, s.tracker.wait()).await });
-
-            s.runtime.shutdown_timeout(timeout_secs);
-
-            match wait_result {
-                Ok(_) => emit_event(RuntimeEvent::ShutdownComplete),
-                Err(_) => emit_event(RuntimeEvent::ShutdownTimeout)
-            }
-        },
-    )
+    crate::open_close::new(3, "tokio_tasks", initialize, shutdown)
 }
