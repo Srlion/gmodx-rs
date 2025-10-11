@@ -33,9 +33,9 @@ impl LuaReceiver {
     }
 
     fn flush(&self, state: &lua::State) {
-        // Collect up to 5 callbacks then drop the lock to avoid deadlocks
+        // Collect up to 20 callbacks then drop the lock to avoid deadlocks
         // We max it to avoid starving the main thread OR lagging it
-        let callbacks: Vec<_> = { self.rx.lock().unwrap().try_iter().take(5).collect() }; // Lock is dropped here
+        let callbacks: Vec<_> = { self.rx.lock().unwrap().try_iter().take(20).collect() }; // Lock is dropped here
         for callback in callbacks {
             ffi::lua_settop(state.0, 0); // Clear the stack before each callback
             self.counter.fetch_sub(1, Ordering::Release);
