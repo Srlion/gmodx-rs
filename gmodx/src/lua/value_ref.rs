@@ -1,5 +1,6 @@
-#![allow(static_mut_refs)]
-use std::{cell::RefCell, fmt};
+use std::{cell::RefCell, fmt, sync::Mutex};
+
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 // This awesome idea is from mlua
 use crate::{
@@ -8,14 +9,18 @@ use crate::{
     sync::XRc,
 };
 
+static FREE_SLOTS: Mutex<FxHashMap<i32, bool>> = Mutex::new(FxHashMap::with_hasher(FxBuildHasher));
+
 struct RefThread {
     state: lua::State,
     stack_top: i32,
-    free_slots: Vec<i32>,
 }
 
 thread_local! {
-    static REF_THREAD: RefCell<Option<RefThread>> = const { RefCell::new(None) };
+    static REF_THREAD: RefCell<RefThread> = const { RefCell::new(RefThread {
+        state: lua::State(std::ptr::null_mut()),
+        stack_top: 0,
+    }) };
 }
 
 #[derive(Clone)]
@@ -32,7 +37,16 @@ pub(crate) struct ValueRefIndex(pub(crate) XRc<i32>);
 
 fn stack_pop() -> i32 {
     with_ref_thread(|thread| {
-        if let Some(free) = thread.free_slots.pop() {
+        let free = {
+            let mut free_slots = FREE_SLOTS.lock().unwrap();
+            if let Some((&value, _)) = free_slots.iter().next() {
+                free_slots.remove(&value);
+                Some(value)
+            } else {
+                None
+            }
+        };
+        if let Some(free) = free {
             ffi::lua_replace(thread.state.0, free);
             free
         } else {
@@ -58,6 +72,7 @@ impl ValueRef {
     /// Pops a lua value from the ref thread.
     pub(crate) fn pop() -> Self {
         let index = stack_pop();
+        // println!("index: {index}");
         Self::new(index)
     }
 
@@ -88,6 +103,10 @@ impl Drop for ValueRef {
             && XRc::into_inner(xrc).is_some()
         {
             let index = self.index;
+            {
+                let mut free_slots = FREE_SLOTS.lock().unwrap();
+                free_slots.insert(index, true);
+            }
             // Make sure we only access the ref_thread on the main thread.
             next_tick(move |_| {
                 with_ref_thread(|thread| {
@@ -95,10 +114,16 @@ impl Drop for ValueRef {
                         ffi::lua_gettop(thread.state.0) >= index,
                         "GC finalizer is not allowed in ref_thread"
                     );
-                    ffi::lua_pushnil(thread.state.0);
-                    ffi::lua_replace(thread.state.0, index);
-                    thread.free_slots.push(index);
-                    // thread.state.dump_stack();
+                    let mut free_slots = FREE_SLOTS.lock().unwrap();
+                    if let Some(should_nil) = free_slots.get(&index)
+                        && *should_nil
+                    {
+                        // println!("freeing {index}");
+                        ffi::lua_pushnil(thread.state.0);
+                        ffi::lua_replace(thread.state.0, index);
+                        free_slots.insert(index, false);
+                        // thread.state.dump_stack();
+                    }
                 });
             });
         }
@@ -111,21 +136,25 @@ impl fmt::Debug for ValueRef {
     }
 }
 
-fn set_ref_thread(state: RefThread) {
-    REF_THREAD.with(|c| *c.borrow_mut() = Some(state));
-}
-
-fn unset_ref_thread() {
-    REF_THREAD.with(|c| *c.borrow_mut() = None);
+fn set_ref_thread(state: lua::State) {
+    REF_THREAD.with(|c| {
+        let mut ref_thread = c.borrow_mut();
+        ref_thread.state = state;
+        ref_thread.stack_top = 0;
+        FREE_SLOTS.lock().unwrap().clear();
+    });
 }
 
 fn with_ref_thread<R>(f: impl FnOnce(&mut RefThread) -> R) -> R {
     REF_THREAD.with(|c| {
         let mut b = c.borrow_mut();
-        let st = b.as_mut().expect("RAW_STATE not initialized");
-        f(st)
+        if b.state.0.is_null() {
+            panic!("RefThread not initialized!");
+        }
+        f(&mut b)
     })
 }
+
 inventory::submit! {
     crate::open_close::new(
         0,
@@ -134,14 +163,10 @@ inventory::submit! {
             let thread = ffi::new_thread(l.0);
             // leak the reference thread so it doesn't get GC'd
             ffi::luaL_ref(l.0, ffi::LUA_REGISTRYINDEX);
-            set_ref_thread(RefThread {
-                state: lua::State(thread),
-                stack_top: 0,
-                free_slots: Vec::new(),
-            });
+            set_ref_thread(lua::State(thread));
         },
         |_| {
-            unset_ref_thread();
+            set_ref_thread(lua::State(std::ptr::null_mut()));
         },
     )
 }
