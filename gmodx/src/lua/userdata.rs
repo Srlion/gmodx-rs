@@ -49,12 +49,12 @@ pub trait UserData: 'static {
 
     /// By default we lazily initialize the methods table.
     /// Use this function to initialize the methods table before it is used.
-    fn init_methods_table(state: &lua::State)
+    fn init_methods_table(state: &lua::State) -> Table
     where
         Self: Sized,
     {
         push_methods_table::<Self>(state);
-        ffi::lua_pop(state.0, 1); // Pop the methods table
+        Table(Value::pop_from_stack(state))
     }
 }
 
