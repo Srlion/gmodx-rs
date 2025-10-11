@@ -12,7 +12,7 @@ static DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u64 = 20;
 
 #[derive(Debug, Clone)]
 pub enum RuntimeEvent {
-    Starting {
+    Started {
         thread_count: usize,
     },
     ShuttingDown {
@@ -47,6 +47,12 @@ static EVENTS: Mutex<EventEmitter> = Mutex::new(EventEmitter {
 
 pub fn on_event(callback: impl Fn(RuntimeEvent) + Send + Sync + 'static) {
     EVENTS.lock().unwrap().register(callback);
+    let g = STATE.lock().unwrap();
+    if let Some(s) = g.as_ref() {
+        emit_event(RuntimeEvent::Started {
+            thread_count: s.thread_count,
+        });
+    }
 }
 
 fn emit_event(event: RuntimeEvent) {
@@ -58,6 +64,7 @@ struct TokioState {
     handle: Handle,
     tracker: TaskTracker,
     graceful_shutdown_timeout: u64,
+    thread_count: usize,
 }
 
 static STATE: Mutex<Option<TokioState>> = Mutex::new(None);
@@ -140,8 +147,6 @@ inventory::submit! {
             let thread_count = load_threads_from_convar(state).unwrap_or(DEFAULT_ASYNC_THREADS_COUNT).max(1);
             let graceful_shutdown_timeout = load_timeout_from_convar(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT).max(1);
 
-            emit_event(RuntimeEvent::Starting { thread_count });
-
             let runtime = Builder::new_multi_thread()
                 .worker_threads(thread_count)
                 .enable_all()
@@ -157,6 +162,7 @@ inventory::submit! {
                 runtime,
                 tracker,
                 graceful_shutdown_timeout,
+                thread_count,
             });
         },
         |_| {
