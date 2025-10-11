@@ -137,8 +137,8 @@ inventory::submit! {
         3,
         "tokio_tasks",
         |state| {
-            let thread_count = load_threads_from_convar(state).unwrap_or(DEFAULT_ASYNC_THREADS_COUNT).min(1);
-            let graceful_shutdown_timeout = load_timeout_from_convar(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT).min(1);
+            let thread_count = load_threads_from_convar(state).unwrap_or(DEFAULT_ASYNC_THREADS_COUNT).max(1);
+            let graceful_shutdown_timeout = load_timeout_from_convar(state).unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT).max(1);
 
             emit_event(RuntimeEvent::Starting { thread_count });
 
