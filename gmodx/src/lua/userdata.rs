@@ -1,6 +1,5 @@
-use crate::sync::{XCell, XRcCell, XRef};
 use std::any::{TypeId, type_name};
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 use std::ffi::{CStr, CString, c_void};
 use std::rc::Rc;
 
@@ -11,14 +10,10 @@ use crate::lua::traits::ObjectLike;
 use crate::lua::types::Callback;
 use crate::lua::{self, Result, ffi::lua_State};
 use crate::lua::{Error, FromLua, FromLuaMulti, Function, Table, ToLua, ToLuaMulti, Value, ffi};
-#[cfg(not(feature = "send"))]
-use crate::sync::XRefMut;
 
 thread_local! {
     static TYPES: RefCell<FxHashMap<*const c_void, TypeId>> = const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
 }
-
-type UserDataCell<T> = XRcCell<T>;
 
 pub trait UserData: 'static {
     fn meta_methods(_: &mut MethodsBuilder) {}
@@ -60,8 +55,6 @@ pub trait UserData: 'static {
     }
 }
 
-impl<T: UserData> UserData for XCell<T> {}
-
 fn push_methods_table<T: UserData>(state: &lua::State) {
     if ffi::luaL_newmetatable(state.0, T::unique_id().as_ptr()) {
         let mut mb = MethodsBuilder::new();
@@ -76,12 +69,12 @@ fn push_methods_table<T: UserData>(state: &lua::State) {
 impl lua::State {
     pub fn create_userdata<T: UserData>(&self, ud: T) -> UserDataRef<T> {
         // Userdata: 1
-        let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<UserDataCell<T>>());
+        let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<RefCell<T>>());
 
-        let data = ud_ptr as *mut UserDataCell<T>;
+        let data = ud_ptr as *mut RefCell<T>;
         // SAFETY: We just created the userdata, so it's safe to write to it.
         unsafe {
-            std::ptr::write_unaligned(data, UserDataCell::new(ud));
+            std::ptr::write_unaligned(data, RefCell::new(ud));
         }
         TYPES.with_borrow_mut(|types| {
             types.insert(ud_ptr, TypeId::of::<T>());
@@ -107,8 +100,8 @@ impl lua::State {
                     return 0;
                 }
 
-                // cast back to UserDataCell<T> to drop it
-                let ud = unsafe { std::ptr::read(ud_ptr as *mut UserDataCell<T>) };
+                // cast back to RefCell<T> to drop it
+                let ud = unsafe { std::ptr::read(ud_ptr as *mut RefCell<T>) };
                 drop(ud);
                 0
             }
@@ -142,7 +135,7 @@ impl lua::State {
         ffi::lua_setmetatable(self.0, -2);
 
         UserDataRef {
-            ptr: ud_ptr as usize,
+            ptr: ud_ptr,
             inner: Value::pop_from_stack(self),
             _marker: std::marker::PhantomData,
         }
@@ -151,59 +144,41 @@ impl lua::State {
 
 #[derive(Debug)]
 pub struct UserDataRef<T: UserData> {
-    ptr: usize,
+    ptr: *const c_void,
     inner: Value, // to hold the userdata's value and be able to push it to the stack quickly
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T: UserData> UserDataRef<T> {
     #[inline]
-    const fn downcast(&self) -> &UserDataCell<T> {
+    const fn downcast(&self) -> &RefCell<T> {
         // SAFETY: The pointer is valid as long as the inner value is alive.
         // SAFETY: We type check before initializing UserDataRef.
-        unsafe { &*(self.ptr as *const UserDataCell<T>) }
+        unsafe { &*(self.ptr as *const RefCell<T>) }
     }
-}
 
-#[cfg(not(feature = "send"))]
-impl<T: UserData> UserDataRef<T> {
     #[inline]
-    pub fn borrow(&self) -> XRef<'_, T> {
+    pub fn borrow(&self) -> Ref<'_, T> {
         self.downcast().borrow()
     }
 
     #[inline]
-    pub fn borrow_mut(&self) -> XRefMut<'_, T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.downcast().borrow_mut()
     }
 
     #[inline]
-    pub fn try_borrow(&self) -> Result<XRef<'_, T>> {
+    pub fn try_borrow(&self) -> Result<Ref<'_, T>> {
         self.downcast()
             .try_borrow()
             .map_err(|err| Error::Message(format!("cannot borrow '{}': {}", T::name(), err)))
     }
 
     #[inline]
-    pub fn try_borrow_mut(&self) -> Result<XRefMut<'_, T>> {
+    pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>> {
         self.downcast().try_borrow_mut().map_err(|err| {
             Error::Message(format!("cannot borrow '{}' mutably: {}", T::name(), err))
         })
-    }
-}
-
-#[cfg(feature = "send")]
-impl<T: UserData> UserDataRef<T> {
-    #[inline]
-    pub fn lock(&self) -> XRef<'_, T> {
-        self.downcast().lock()
-    }
-
-    #[inline]
-    pub fn try_lock(&self) -> Result<XRef<'_, T>> {
-        self.downcast()
-            .try_lock()
-            .map_err(|err| Error::Message(format!("cannot borrow '{}': {}", T::name(), err)))
     }
 }
 
@@ -274,7 +249,7 @@ impl AnyUserData {
             return None;
         }
         Some(UserDataRef {
-            ptr: self.ptr() as usize,
+            ptr: self.ptr(),
             inner: self.0,
             _marker: std::marker::PhantomData,
         })
