@@ -1,5 +1,6 @@
-use std::any::{Any, TypeId, type_name};
-use std::cell::{Ref, RefCell, RefMut};
+use crate::sync::{XCell, XRcCell, XRef, XRefMut};
+use std::any::{TypeId, type_name};
+use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_void};
 use std::rc::Rc;
 
@@ -12,12 +13,12 @@ use crate::lua::{self, Result, ffi::lua_State};
 use crate::lua::{Error, FromLua, FromLuaMulti, Function, Table, ToLua, ToLuaMulti, Value, ffi};
 
 thread_local! {
-    static OBJECTS: RefCell<FxHashMap<*mut c_void, Rc<dyn Any>>> =
-        const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
+    static TYPES: RefCell<FxHashMap<*mut c_void, TypeId>> = const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
 }
 
 pub trait UserData: 'static {
     fn meta_methods(_: &mut MethodsBuilder) {}
+
     fn methods(_: &mut MethodsBuilder) {}
 
     fn name() -> &'static str {
@@ -32,15 +33,13 @@ pub trait UserData: 'static {
             static IDS: RefCell<FxHashMap<TypeId, Rc<CStr>>> =
                 const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
         }
+        let type_id = TypeId::of::<Self>();
         IDS.with_borrow_mut(|ids| {
-            ids.entry(std::any::TypeId::of::<Self>())
+            ids.entry(type_id)
                 .or_insert_with(|| {
-                    let cstring = CString::new(format!(
-                        "{}_{:?}",
-                        gmodx_macros::unique_id!(),
-                        std::any::TypeId::of::<Self>()
-                    ))
-                    .unwrap();
+                    let cstring =
+                        CString::new(format!("{}_{:?}", gmodx_macros::unique_id!(), type_id))
+                            .unwrap();
                     Rc::from(cstring)
                 })
                 .clone()
@@ -57,6 +56,8 @@ pub trait UserData: 'static {
         Table(Value::pop_from_stack(state))
     }
 }
+
+impl<T: UserData> UserData for XCell<T> {}
 
 fn push_methods_table<T: UserData>(state: &lua::State) {
     if ffi::luaL_newmetatable(state.0, T::unique_id().as_ptr()) {
@@ -75,11 +76,15 @@ fn push_methods_table<T: UserData>(state: &lua::State) {
 impl lua::State {
     pub fn create_userdata<T: UserData>(&self, ud: T) -> AnyUserData {
         // Userdata: 1
-        let ud_ptr = ffi::lua_newuserdata(self.0, 0);
+        let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<UserDataRef<T>>());
 
-        OBJECTS.with_borrow_mut(|objects| {
-            let boxed: Rc<dyn Any> = Rc::new(RefCell::new(ud));
-            objects.insert(ud_ptr, boxed);
+        let data = ud_ptr as *mut UserDataRef<T>;
+        // SAFETY: We just created the userdata, so it's safe to write to it.
+        unsafe {
+            std::ptr::write_unaligned(data, UserDataRef::new(ud));
+        }
+        TYPES.with_borrow_mut(|types| {
+            types.insert(ud_ptr, TypeId::of::<T>());
         });
 
         // UserData metatable: 2
@@ -95,15 +100,20 @@ impl lua::State {
                 ffi::lua_setfield(self.0, -2, name.as_ptr());
             }
 
-            extern "C-unwind" fn __gc(state: *mut lua_State) -> i32 {
-                let l = lua::State(state);
-                let ud_ptr = ffi::lua_touserdata(l.0, -1);
-                OBJECTS.with_borrow_mut(|objects| {
-                    objects.remove(&ud_ptr);
-                });
+            extern "C-unwind" fn __gc<T: UserData>(state: *mut lua_State) -> i32 {
+                let ud_ptr = ffi::lua_touserdata(state, -1);
+
+                let type_id = TYPES.with_borrow_mut(|types| types.remove(&ud_ptr));
+                if type_id.is_none() {
+                    return 0;
+                }
+
+                // cast back to UserDataRef<T> to drop it
+                let ud = unsafe { std::ptr::read(ud_ptr as *mut UserDataRef<T>) };
+                drop(ud);
                 0
             }
-            ffi::lua_pushcclosure(self.0, Some(__gc), 0);
+            ffi::lua_pushcclosure(self.0, Some(__gc::<T>), 0);
             ffi::lua_setfield(self.0, -2, c"__gc".as_ptr());
         }
 
@@ -137,7 +147,13 @@ impl lua::State {
 }
 
 #[derive(Debug)]
-pub struct UserDataRef<T: UserData>(Rc<RefCell<T>>);
+pub struct UserDataRef<T: UserData>(XRcCell<T>);
+
+impl<T: UserData> UserDataRef<T> {
+    pub fn new(ud: T) -> Self {
+        UserDataRef(XRcCell::new(ud))
+    }
+}
 
 impl<T: UserData> Clone for UserDataRef<T> {
     fn clone(&self) -> Self {
@@ -147,24 +163,24 @@ impl<T: UserData> Clone for UserDataRef<T> {
 
 impl<T: UserData> UserDataRef<T> {
     #[inline]
-    pub fn borrow(&self) -> Ref<'_, T> {
+    pub fn borrow(&self) -> XRef<'_, T> {
         self.0.borrow()
     }
 
     #[inline]
-    pub fn borrow_mut(&self) -> RefMut<'_, T> {
+    pub fn borrow_mut(&self) -> XRefMut<'_, T> {
         self.0.borrow_mut()
     }
 
     #[inline]
-    pub fn try_borrow(&self) -> Result<Ref<'_, T>> {
+    pub fn try_borrow(&self) -> Result<XRef<'_, T>> {
         self.0
             .try_borrow()
             .map_err(|err| Error::Message(format!("cannot borrow '{}': {}", T::name(), err)))
     }
 
     #[inline]
-    pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>> {
+    pub fn try_borrow_mut(&self) -> Result<XRefMut<'_, T>> {
         self.0.try_borrow_mut().map_err(|err| {
             Error::Message(format!("cannot borrow '{}' mutably: {}", T::name(), err))
         })
@@ -185,21 +201,23 @@ impl AnyUserData {
 
     #[inline]
     pub fn is<T: UserData>(&self, _: &lua::State) -> bool {
-        OBJECTS.with_borrow(|objects| {
-            objects
+        TYPES.with_borrow(|types| {
+            types
                 .get(&self.ptr())
-                .is_some_and(|obj| obj.is::<RefCell<T>>())
+                .is_some_and(|type_id| type_id == &TypeId::of::<T>())
         })
     }
 
-    pub fn downcast<T: UserData>(&self, _: &lua::State) -> Option<UserDataRef<T>> {
-        OBJECTS
-            .with_borrow(|objects| {
-                objects
-                    .get(&self.ptr())
-                    .and_then(|rc| rc.clone().downcast::<RefCell<T>>().ok())
-            })
-            .map(|rc| UserDataRef(rc))
+    #[inline]
+    pub fn downcast<T: UserData>(&self, state: &lua::State) -> Option<UserDataRef<T>>
+    where
+        UserDataRef<T>: Clone,
+    {
+        if !self.is::<T>(state) {
+            return None;
+        }
+        let ud = unsafe { &*(self.ptr() as *const UserDataRef<T>) };
+        Some(ud.clone())
     }
 
     #[inline]
@@ -315,31 +333,5 @@ impl IntoIterator for MethodsBuilder {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
-    }
-}
-
-pub struct TypedUserData<T: UserData>(pub AnyUserData, std::marker::PhantomData<T>);
-
-impl<T: UserData> FromLua for TypedUserData<T> {
-    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-        let any = AnyUserData::from_stack_with_type(state, index, T::name())?;
-        // Type check it
-        any.downcast::<T>(state)
-            .ok_or_else(|| state.type_error(index, T::name()))?;
-        Ok(TypedUserData(any, std::marker::PhantomData))
-    }
-}
-
-impl<T: UserData> std::ops::Deref for TypedUserData<T> {
-    type Target = AnyUserData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T: UserData> std::ops::DerefMut for TypedUserData<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
