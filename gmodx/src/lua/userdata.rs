@@ -72,7 +72,7 @@ fn push_methods_table<T: UserData>(state: &lua::State) {
 }
 
 impl lua::State {
-    pub fn create_userdata<T: UserData>(&self, ud: T) -> AnyUserData {
+    pub fn create_userdata<T: UserData>(&self, ud: T) -> UserDataRef<T> {
         // Userdata: 1
         let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<UserDataCell<T>>());
 
@@ -139,7 +139,11 @@ impl lua::State {
         // Set userdata's metatable
         ffi::lua_setmetatable(self.0, -2);
 
-        AnyUserData(Value::pop_from_stack(self))
+        UserDataRef {
+            ptr: ud_ptr as usize,
+            inner: Value::pop_from_stack(self),
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
