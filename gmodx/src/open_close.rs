@@ -2,6 +2,14 @@ use std::{collections::HashSet, sync::atomic::AtomicBool};
 
 use crate::lua::{self, ffi};
 
+thread_local! {
+    static IS_MAIN_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn is_main_thread() -> bool {
+    IS_MAIN_THREAD.with(|cell| cell.get())
+}
+
 static GMOD_CLOSED: AtomicBool = AtomicBool::new(true);
 
 #[inline]
@@ -56,6 +64,7 @@ fn get_sorted_modules() -> Vec<&'static OpenClose> {
 
 #[allow(unused)]
 pub fn load_all(state: &lua::State) {
+    IS_MAIN_THREAD.with(|cell| cell.set(true));
     GMOD_CLOSED.store(false, std::sync::atomic::Ordering::Release);
 
     let modules = get_sorted_modules();
@@ -85,4 +94,6 @@ pub fn unload_all(state: &lua::State) {
             module.id, module.priority
         );
     }
+
+    IS_MAIN_THREAD.with(|cell| cell.set(false));
 }
