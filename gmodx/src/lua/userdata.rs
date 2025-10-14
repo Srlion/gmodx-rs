@@ -145,7 +145,7 @@ impl lua::State {
 
 #[derive(Debug, Clone)]
 pub struct UserDataRef<T: UserData> {
-    ptr: *const c_void,
+    ptr: usize,
     inner: Value, // to hold the userdata's value and be able to push it to the stack quickly
     _marker: std::marker::PhantomData<T>,
 }
@@ -240,7 +240,7 @@ impl AnyUserData {
             return None;
         }
         Some(UserDataRef {
-            ptr: self.ptr(),
+            ptr: self.ptr() as usize,
             inner: self.0,
             _marker: std::marker::PhantomData,
         })
