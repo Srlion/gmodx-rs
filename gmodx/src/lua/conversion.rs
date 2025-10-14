@@ -5,7 +5,7 @@ use bstr::{BStr, BString};
 use num_traits::cast;
 
 use crate::lua::traits::{FromLua, ToLua};
-use crate::lua::{self, Error, FromLuaMulti, LightUserData, Result, ToLuaMulti, ffi};
+use crate::lua::{self, Error, FromLuaMulti, LightUserData, Result, Table, ToLuaMulti, ffi};
 
 impl<T: ToLua> ToLua for Option<T> {
     #[inline]
@@ -176,6 +176,52 @@ fn from_lua_f64(state: &lua::State, index: i32) -> Result<f64> {
     match ffi::lua_type(state.0, index) {
         ffi::LUA_TNUMBER | ffi::LUA_TSTRING => Ok(ffi::lua_tonumber(state.0, index)),
         _ => Err(state.type_error(index, "number")),
+    }
+}
+
+impl<T> ToLua for &Vec<T>
+where
+    for<'a> &'a T: ToLua,
+{
+    fn push_to_stack(self, state: &lua::State) {
+        let table = state.create_table_with_capacity(self.len() as i32, 0);
+        for (i, item) in self.iter().enumerate() {
+            table.raw_set(state, i + 1, item); // Lua arrays are 1-indexed
+        }
+        table.push_to_stack(state);
+    }
+}
+
+impl<T: ToLua> ToLua for Vec<T> {
+    fn push_to_stack(self, state: &lua::State) {
+        let table = state.create_table_with_capacity(self.len() as i32, 0);
+        for (i, item) in self.into_iter().enumerate() {
+            table.raw_set(state, i + 1, item); // Lua arrays are 1-indexed
+        }
+        table.push_to_stack(state);
+    }
+}
+
+impl<T: ToLua + Clone> ToLua for &[T] {
+    fn push_to_stack(self, state: &lua::State) {
+        let table = state.create_table_with_capacity(self.len() as i32, 0);
+        for (i, item) in self.iter().enumerate() {
+            table.raw_set(state, i + 1, item.clone());
+        }
+        table.push_to_stack(state);
+    }
+}
+
+impl<T: FromLua> FromLua for Vec<T> {
+    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+        let table = Table::try_from_stack(state, index)?;
+        let len = table.raw_len(state);
+        let mut vec = Vec::with_capacity(len);
+        for i in 1..=len {
+            let value = table.raw_get(state, i)?;
+            vec.push(value);
+        }
+        Ok(vec)
     }
 }
 
