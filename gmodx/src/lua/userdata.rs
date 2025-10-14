@@ -143,7 +143,7 @@ impl lua::State {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct UserDataRef<T: UserData> {
     ptr: usize,
     inner: Value, // to hold the userdata's value and be able to push it to the stack quickly
@@ -180,6 +180,16 @@ impl<T: UserData> UserDataRef<T> {
         self.downcast().try_borrow_mut().map_err(|err| {
             Error::Message(format!("cannot borrow '{}' mutably: {}", T::name(), err))
         })
+    }
+}
+
+impl<T: UserData> Clone for UserDataRef<T> {
+    fn clone(&self) -> Self {
+        UserDataRef {
+            ptr: self.ptr,
+            inner: self.inner.clone(),
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
