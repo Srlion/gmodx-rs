@@ -1,4 +1,4 @@
-use crate::sync::{XCell, XRcCell, XRef, XRefMut};
+use crate::sync::{XCell, XRcCell, XRef};
 use std::any::{TypeId, type_name};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_void};
@@ -11,6 +11,8 @@ use crate::lua::traits::ObjectLike;
 use crate::lua::types::Callback;
 use crate::lua::{self, Result, ffi::lua_State};
 use crate::lua::{Error, FromLua, FromLuaMulti, Function, Table, ToLua, ToLuaMulti, Value, ffi};
+#[cfg(not(feature = "send"))]
+use crate::sync::XRefMut;
 
 thread_local! {
     static TYPES: RefCell<FxHashMap<*const c_void, TypeId>> = const { RefCell::new(FxHashMap::with_hasher(FxBuildHasher)) };
@@ -161,7 +163,10 @@ impl<T: UserData> UserDataRef<T> {
         // SAFETY: We type check before initializing UserDataRef.
         unsafe { &*(self.ptr as *const UserDataCell<T>) }
     }
+}
 
+#[cfg(not(feature = "send"))]
+impl<T: UserData> UserDataRef<T> {
     #[inline]
     pub fn borrow(&self) -> XRef<'_, T> {
         self.downcast().borrow()
@@ -184,6 +189,21 @@ impl<T: UserData> UserDataRef<T> {
         self.downcast().try_borrow_mut().map_err(|err| {
             Error::Message(format!("cannot borrow '{}' mutably: {}", T::name(), err))
         })
+    }
+}
+
+#[cfg(feature = "send")]
+impl<T: UserData> UserDataRef<T> {
+    #[inline]
+    pub fn lock(&self) -> XRef<'_, T> {
+        self.downcast().lock()
+    }
+
+    #[inline]
+    pub fn try_lock(&self) -> Result<XRef<'_, T>> {
+        self.downcast()
+            .try_lock()
+            .map_err(|err| Error::Message(format!("cannot borrow '{}': {}", T::name(), err)))
     }
 }
 

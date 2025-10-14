@@ -12,12 +12,12 @@ mod inner {
 
 #[cfg(feature = "send")]
 mod inner {
-    use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+    use std::sync::{Arc, Mutex, MutexGuard};
 
     pub type XRc<T> = Arc<T>;
-    pub type XCell<T> = RwLock<T>;
-    pub type XRef<'a, T> = RwLockReadGuard<'a, T>;
-    pub type XRefMut<'a, T> = RwLockWriteGuard<'a, T>;
+    pub type XCell<T> = Mutex<T>;
+    pub type XRef<'a, T> = MutexGuard<'a, T>;
+    pub type XRefMut<'a, T> = MutexGuard<'a, T>; // Mutex has only one guard type
 }
 
 pub use inner::*;
@@ -29,9 +29,7 @@ pub type XTryBorrowError = std::cell::BorrowError;
 pub type XTryBorrowMutError = std::cell::BorrowMutError;
 
 #[cfg(feature = "send")]
-pub type XTryBorrowError<'a, T> = std::sync::TryLockError<std::sync::RwLockReadGuard<'a, T>>;
-#[cfg(feature = "send")]
-pub type XTryBorrowMutError<'a, T> = std::sync::TryLockError<std::sync::RwLockWriteGuard<'a, T>>;
+pub type XTryLockError<'a, T> = std::sync::TryLockError<std::sync::MutexGuard<'a, T>>;
 
 pub struct XRcCell<T>(XRc<XCell<T>>);
 
@@ -39,38 +37,25 @@ impl<T> XRcCell<T> {
     pub(crate) fn new(value: T) -> Self {
         Self(XRc::new(XCell::new(value)))
     }
-
-    #[inline]
-    pub fn borrow(&self) -> XRef<'_, T> {
-        #[cfg(not(feature = "send"))]
-        {
-            self.0.borrow()
-        }
-        #[cfg(feature = "send")]
-        {
-            self.0.read().expect("RwLock poisoned")
-        }
-    }
-
-    #[inline]
-    pub fn borrow_mut(&self) -> XRefMut<'_, T> {
-        #[cfg(not(feature = "send"))]
-        {
-            self.0.borrow_mut()
-        }
-        #[cfg(feature = "send")]
-        {
-            self.0.write().expect("RwLock poisoned")
-        }
-    }
 }
 
 #[cfg(not(feature = "send"))]
 impl<T> XRcCell<T> {
     #[inline]
+    pub fn borrow(&self) -> XRef<'_, T> {
+        self.0.borrow()
+    }
+
+    #[inline]
+    pub fn borrow_mut(&self) -> XRefMut<'_, T> {
+        self.0.borrow_mut()
+    }
+
+    #[inline]
     pub fn try_borrow(&self) -> Result<XRef<'_, T>, XTryBorrowError> {
         self.0.try_borrow()
     }
+
     #[inline]
     pub fn try_borrow_mut(&self) -> Result<XRefMut<'_, T>, XTryBorrowMutError> {
         self.0.try_borrow_mut()
@@ -80,12 +65,13 @@ impl<T> XRcCell<T> {
 #[cfg(feature = "send")]
 impl<T> XRcCell<T> {
     #[inline]
-    pub fn try_borrow(&self) -> Result<XRef<'_, T>, XTryBorrowError<'_, T>> {
-        self.0.try_read()
+    pub fn lock(&self) -> XRef<'_, T> {
+        self.0.lock().expect("Mutex poisoned")
     }
+
     #[inline]
-    pub fn try_borrow_mut(&self) -> Result<XRefMut<'_, T>, XTryBorrowMutError<'_, T>> {
-        self.0.try_write()
+    pub fn try_lock(&self) -> Result<XRef<'_, T>, XTryLockError<'_, T>> {
+        self.0.try_lock()
     }
 }
 
@@ -103,9 +89,19 @@ impl<T: Default> Default for XRcCell<T> {
 
 impl<T: std::fmt::Debug> std::fmt::Debug for XRcCell<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.try_borrow() {
-            Ok(borrowed) => write!(f, "XRcCell({:?})", &*borrowed),
-            _ => write!(f, "XRcCell(<borrowed>)"),
+        #[cfg(not(feature = "send"))]
+        {
+            match self.try_borrow() {
+                Ok(borrowed) => write!(f, "XRcCell({:?})", &*borrowed),
+                _ => write!(f, "XRcCell(<borrowed>)"),
+            }
+        }
+        #[cfg(feature = "send")]
+        {
+            match self.try_lock() {
+                Ok(guard) => write!(f, "XRcCell({:?})", &*guard),
+                _ => write!(f, "XRcCell(<locked>)"),
+            }
         }
     }
 }
