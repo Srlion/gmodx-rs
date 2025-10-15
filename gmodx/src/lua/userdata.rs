@@ -136,7 +136,7 @@ impl lua::State {
 
         UserDataRef {
             ptr: ud_ptr,
-            inner: Value::pop_from_stack(self),
+            inner: AnyUserData(Value::pop_from_stack(self)),
             _marker: std::marker::PhantomData,
         }
     }
@@ -145,7 +145,7 @@ impl lua::State {
 #[derive(Debug)]
 pub struct UserDataRef<T: UserData> {
     ptr: *const c_void,
-    inner: Value, // to hold the userdata's value and be able to push it to the stack quickly
+    inner: AnyUserData, // to hold the userdata's value and be able to push it to the stack quickly
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -180,6 +180,11 @@ impl<T: UserData> UserDataRef<T> {
             Error::Message(format!("cannot borrow '{}' mutably: {}", T::name(), err))
         })
     }
+
+    #[inline]
+    pub fn as_any(&self) -> &AnyUserData {
+        &self.inner
+    }
 }
 
 impl<T: UserData> Clone for UserDataRef<T> {
@@ -197,8 +202,8 @@ impl<T: UserData> ToLua for UserDataRef<T> {
         self.inner.push_to_stack(state);
     }
 
-    fn to_value(self, _: &lua::State) -> Value {
-        self.inner
+    fn to_value(self, state: &lua::State) -> Value {
+        self.inner.to_value(state)
     }
 }
 
@@ -209,7 +214,7 @@ impl<T: UserData> ToLua for &UserDataRef<T> {
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.inner.clone()
+        self.inner.0.clone()
     }
 }
 
@@ -250,7 +255,7 @@ impl AnyUserData {
         }
         Some(UserDataRef {
             ptr: self.ptr(),
-            inner: self.0,
+            inner: self,
             _marker: std::marker::PhantomData,
         })
     }
@@ -301,7 +306,7 @@ impl FromLua for AnyUserData {
 
 impl<T: UserData> From<UserDataRef<T>> for AnyUserData {
     fn from(udref: UserDataRef<T>) -> Self {
-        AnyUserData(udref.inner)
+        udref.inner
     }
 }
 
