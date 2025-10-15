@@ -38,9 +38,11 @@ def host_os() -> str:
     raise RuntimeError(f"unsupported host OS: {s}")
 
 
-def target_triple(os_: str, arch: int) -> str:
+def target_triple(os_: str, arch: int, windows_gnu: bool = False) -> str:
     if os_ == "windows":
         return "i686-pc-windows-msvc" if arch == 32 else "x86_64-pc-windows-msvc"
+    if windows_gnu:
+        return "i686-pc-windows-gnu" if arch == 32 else "x86_64-pc-windows-gnu"
     return "i686-unknown-linux-gnu" if arch == 32 else "x86_64-unknown-linux-gnu"
 
 
@@ -124,25 +126,32 @@ def infer_pkg_and_lib(cwd: Path) -> Tuple[Path, str]:
 
 
 def artifact_path_for(
-    target_dir: Path, target: str, lib_name: str, os_: str, profile: str
+    target_dir: Path,
+    target: str,
+    lib_name: str,
+    os_: str,
+    profile: str,
+    windows_gnu: bool = False,
 ) -> Path:
     base = target_dir / target / profile
-    if os_ == "windows":
+    if os_ == "windows" or windows_gnu:
         return base / f"{lib_name}.dll"
     return base / (
         f"{lib_name}.so" if lib_name.startswith("lib") else f"lib{lib_name}.so"
     )
 
 
-def gmod_suffix(os_: str, arch: int) -> str:
-    if os_ == "windows":
+def gmod_suffix(os_: str, arch: int, windows_gnu: bool = False) -> str:
+    if os_ == "windows" or windows_gnu:
         return "_win32.dll" if arch == 32 else "_win64.dll"
     else:
         return "_linux.dll" if arch == 32 else "_linux64.dll"
 
 
-def final_out_name(outdir: Path, base_name: str, os_: str, arch: int) -> Path:
-    return outdir / (base_name + gmod_suffix(os_, arch))
+def final_out_name(
+    outdir: Path, base_name: str, os_: str, arch: int, windows_gnu: bool = False
+) -> Path:
+    return outdir / (base_name + gmod_suffix(os_, arch, windows_gnu))
 
 
 def ensure_rust_toolchain_and_target(toolchain: str, target: str):
@@ -193,6 +202,9 @@ def main():
         default="stable",
         help="Rust toolchain (default: stable, e.g. nightly, 1.81.0, stable-YYYY-MM-DD)",
     )
+    parser.add_argument(
+        "--windows-gnu", action="store_true", help="Build for Windows GNU toolchain"
+    )
 
     args = parser.parse_args()
 
@@ -202,7 +214,7 @@ def main():
         sys.exit(1)
 
     os_ = host_os()
-    target = target_triple(os_, args.arch)
+    target = target_triple(os_, args.arch, windows_gnu=args.windows_gnu)
 
     pkg_dir, lib_name = infer_pkg_and_lib(workdir)
     base_name = args.name or lib_name
@@ -248,12 +260,20 @@ def main():
 
     run(cargo_cmd, env=env, cwd=str(pkg_dir))
 
-    built_abs = artifact_path_for(target_dir, target, lib_name, os_, profile)
+    built_abs = artifact_path_for(
+        target_dir, target, lib_name, os_, profile, windows_gnu=args.windows_gnu
+    )
     if not built_abs.is_file():
         print(f"error: built artifact not found: {built_abs}")
         sys.exit(1)
 
-    dest = final_out_name(Path(args.outdir).resolve(), base_name, os_, args.arch)
+    dest = final_out_name(
+        Path(args.outdir).resolve(),
+        base_name,
+        os_,
+        args.arch,
+        windows_gnu=args.windows_gnu,
+    )
     shutil.copy2(built_abs, dest)
 
 
