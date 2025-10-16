@@ -20,10 +20,9 @@ impl<T: ToLua> ToLua for Option<T> {
 impl<T: FromLua> FromLua for Option<T> {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-        if ffi::lua_type(state.0, index) == ffi::LUA_TNIL {
-            Ok(None)
-        } else {
-            T::try_from_stack(state, index).map(Some)
+        match ffi::lua_type(state.0, index) {
+            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(None),
+            _ => T::try_from_stack(state, index).map(Some),
         }
     }
 }
