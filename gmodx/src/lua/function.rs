@@ -41,6 +41,33 @@ impl Function {
         }
         res
     }
+
+    /// Calls the function with the given arguments, ignoring any return values.
+    pub fn call_no_rets(&self, state: &lua::State, args: impl ToLuaMulti) -> lua::Result<()> {
+        let stack_start = ffi::lua_gettop(state.0);
+        let _sg = StackGuard::with_top(state.0, stack_start);
+        #[allow(clippy::needless_borrow)]
+        (&self.0).push_to_stack(state); // Push the function onto the stack
+        args.push_to_stack_multi(state);
+        let nargs = ffi::lua_gettop(state.0) - stack_start - 1;
+        match ffi::lua_pcall(state.0, nargs, 0, 0) {
+            ffi::LUA_OK => Ok(()),
+            res => Err(state.pop_error(res)),
+        }
+    }
+
+    /// Same as [`call_no_rets`], but logs any errors that occur.
+    pub fn call_no_rets_logged(
+        &self,
+        state: &lua::State,
+        args: impl ToLuaMulti,
+    ) -> lua::Result<()> {
+        let res = self.call_no_rets(state, args);
+        if let Err(err) = &res {
+            state.error_no_halt_with_stack(&err.to_string());
+        }
+        res
+    }
 }
 
 const CLOSURE_GC_METATABLE_NAME: &CStr = gmodx_macros::unique_id!(cstr);
