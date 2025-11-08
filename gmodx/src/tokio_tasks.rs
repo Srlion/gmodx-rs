@@ -74,6 +74,16 @@ where
     Some(s.handle.spawn(fut))
 }
 
+pub fn block_on<F>(fut: F) -> Option<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    let g = STATE.lock().unwrap();
+    let s = g.as_ref()?;
+    Some(s.runtime.block_on(fut))
+}
+
 fn load_threads_from_convar(state: &lua::State) -> Option<usize> {
     let globals = state.globals();
 
