@@ -234,3 +234,42 @@ impl<V: FromLua> Iterator for IPairsIter<V> {
             .map(|value| (self.index, value))
     }
 }
+
+/// Macro to create Lua tables.
+///
+/// Examples:
+/// ```rust
+/// // Empty table
+/// let t1 = table!(state);
+/// // Array-style
+/// let t2 = table!(state, [1, 2, 3]);
+/// // Map-style
+/// let t3 = table!(state, { "key" => "value", "foo" => "bar" });
+/// ```
+#[macro_export]
+macro_rules! table {
+    // Empty table
+    ($state:expr) => {
+        $state.create_table()
+    };
+    // Array-style: table!(state, [1, 2, 3])
+    ($state:expr, [$($val:expr),* $(,)?]) => {{
+        let t = $state.create_table();
+        let mut _i = 1;
+        $(
+            t.raw_set($state, _i, $val);
+            _i += 1;
+        )*
+        t
+    }};
+    // Map-style: table!(state, { "key" => value, "foo" => bar })
+    ($state:expr, { $($key:expr => $val:expr),* $(,)? }) => {{
+        let t = $state.create_table();
+        $(
+            t.raw_set($state, $key, $val);
+        )*
+        t
+    }};
+}
+
+pub use table;

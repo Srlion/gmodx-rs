@@ -21,7 +21,7 @@ mod stack_guard;
 pub use stack_guard::StackGuard;
 
 mod table;
-pub use table::Table;
+pub use table::{Table, table};
 
 mod thread;
 
