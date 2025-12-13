@@ -24,6 +24,7 @@ mod table;
 pub use table::{Table, table};
 
 mod thread;
+pub use thread::{Thread, ThreadStatus};
 
 mod traits;
 pub use traits::{FromLua, FromLuaMulti, ObjectLike, ToLua, ToLuaMulti};
