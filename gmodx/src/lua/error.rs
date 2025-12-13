@@ -31,6 +31,18 @@ pub enum Error {
         function: String,
         cause: String,
     },
+
+    /// [`Thread::resume`] was called on an unresumable coroutine.
+    ///
+    /// A coroutine is unresumable if its main function has returned or if an error has occurred
+    /// inside the coroutine. Already running coroutines are also marked as unresumable.
+    ///
+    /// [`Thread::status`] can be used to check if the coroutine can be resumed without causing this
+    /// error.
+    ///
+    /// [`Thread::resume`]: crate::Thread::resume
+    /// [`Thread::status`]: crate::Thread::status
+    CoroutineUnresumable,
 }
 
 impl std::fmt::Display for Error {
@@ -51,6 +63,7 @@ impl std::fmt::Display for Error {
                 function,
                 cause,
             } => write!(f, "bad argument #{} to '{}' ({})", arg_num, function, cause),
+            Error::CoroutineUnresumable => write!(f, "coroutine is unresumable"),
         }
     }
 }

@@ -23,6 +23,8 @@ pub use stack_guard::StackGuard;
 mod table;
 pub use table::Table;
 
+mod thread;
+
 mod traits;
 pub use traits::{FromLua, FromLuaMulti, ObjectLike, ToLua, ToLuaMulti};
 

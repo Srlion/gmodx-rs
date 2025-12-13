@@ -383,3 +383,23 @@ pub fn luaL_loadbuffer(
 ) -> i32 {
     unsafe { FFI.luaL_loadbuffer(L, buff, sz, name) }
 }
+
+#[inline(always)]
+pub fn lua_yield(L: *mut lua_State, nresults: i32) -> i32 {
+    unsafe { FFI.lua_yield(L, nresults) }
+}
+
+#[inline(always)]
+pub fn lua_resume(L: *mut lua_State, narg: i32) -> i32 {
+    unsafe { FFI.lua_resume_real(L, narg) }
+}
+
+#[inline(always)]
+pub fn lua_status(L: *mut lua_State) -> i32 {
+    unsafe { FFI.lua_status(L) }
+}
+
+#[inline(always)]
+pub fn lua_tothread(L: *mut lua_State, idx: i32) -> *mut lua_State {
+    unsafe { FFI.lua_tothread(L, idx) }
+}
