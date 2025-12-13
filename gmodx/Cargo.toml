@@ -1,6 +1,6 @@
 [package]
 name = "gmodx"
-version = "0.16.7"
+version = "0.17.0"
 authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
 edition = "2024"
 license = "MIT"
@@ -16,7 +16,7 @@ categories = [
 
 [features]
 default = []
-tokio-tasks = ["dep:tokio", "dep:tokio-util"]
+tokio = ["dep:tokio", "dep:tokio-util"]
 send = []
 
 [dependencies]

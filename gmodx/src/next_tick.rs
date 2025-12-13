@@ -6,6 +6,8 @@ use crate::lua::{self};
 use super::next_tick_queue::NextTickQueue;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "tokio")]
+use tokio::sync::oneshot;
 
 static NEXT_TICK: Mutex<Option<NextTickQueue>> = Mutex::new(None);
 
@@ -52,6 +54,21 @@ where
     while !done.load(Ordering::Acquire) {
         thread::park();
     }
+}
+
+#[cfg(feature = "tokio")]
+pub async fn async_next_tick<F, T>(f: F) -> T
+where
+    F: FnOnce(&lua::State) -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let (tx, rx) = oneshot::channel();
+
+    next_tick(move |state| {
+        let _ = tx.send(f(state));
+    });
+
+    rx.await.expect("next_tick callback was dropped")
 }
 
 inventory::submit! {
