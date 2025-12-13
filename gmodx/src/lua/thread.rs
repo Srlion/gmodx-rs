@@ -35,7 +35,7 @@ impl Clone for Thread {
 
 impl Thread {
     #[inline]
-    fn thread_state(&self) -> &lua::State {
+    pub fn thread_state(&self) -> &lua::State {
         &self.1
     }
 
