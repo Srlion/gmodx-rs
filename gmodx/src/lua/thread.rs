@@ -35,7 +35,7 @@ impl Clone for Thread {
 
 impl Thread {
     #[inline]
-    pub fn thread_state(&self) -> &lua::State {
+    pub fn state(&self, _: &lua::State) -> &lua::State {
         &self.1
     }
 
@@ -49,7 +49,7 @@ impl Thread {
             _ => return Err(lua::Error::CoroutineUnresumable),
         };
 
-        let thread_state = self.thread_state();
+        let thread_state = &self.1;
         let _sg = StackGuard::new(state.0);
 
         // Push args to main state then move to thread
@@ -90,7 +90,7 @@ impl Thread {
     }
 
     fn status_inner(&self, state: &lua::State) -> ThreadStatusInner {
-        let thread_state = self.thread_state();
+        let thread_state = &self.1;
         if thread_state.0 == state.0 {
             return ThreadStatusInner::Running;
         }
@@ -108,9 +108,9 @@ impl Thread {
         let status = self.status_inner(state);
         match status {
             ThreadStatusInner::New(_) | ThreadStatusInner::Finished => {
-                ffi::lua_settop(self.thread_state().0, 0);
+                ffi::lua_settop(self.1.0, 0);
                 func.push_to_stack(state);
-                ffi::lua_xmove(state.0, self.thread_state().0, 1);
+                ffi::lua_xmove(state.0, self.1.0, 1);
                 Ok(())
             }
             ThreadStatusInner::Running => {
