@@ -44,8 +44,8 @@ impl Thread {
         state: &lua::State,
         args: impl ToLuaMulti,
     ) -> lua::Result<R> {
-        let mut pushed_nargs = match self.status_inner(state) {
-            ThreadStatusInner::New(n) | ThreadStatusInner::Yielded(n) => n,
+        match self.status_inner(state) {
+            ThreadStatusInner::New(_) | ThreadStatusInner::Yielded(_) => {}
             _ => return Err(lua::Error::CoroutineUnresumable),
         };
 
@@ -56,11 +56,10 @@ impl Thread {
         let nargs = args.push_to_stack_multi_count(state);
         if nargs > 0 {
             ffi::lua_xmove(state.0, thread_state.0, nargs);
-            pushed_nargs += nargs;
         }
 
         // Resume and get results
-        let ret = ffi::lua_resume(thread_state.0, pushed_nargs);
+        let ret = ffi::lua_resume(thread_state.0, nargs);
         let nresults = ffi::lua_gettop(thread_state.0);
 
         match ret {
