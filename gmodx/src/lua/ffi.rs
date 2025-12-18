@@ -403,3 +403,8 @@ pub fn lua_status(L: *mut lua_State) -> i32 {
 pub fn lua_tothread(L: *mut lua_State, idx: i32) -> *mut lua_State {
     unsafe { FFI.lua_tothread(L, idx) }
 }
+
+#[inline(always)]
+pub fn lua_getfenv(L: *mut lua_State, idx: i32) {
+    unsafe { FFI.lua_getfenv(L, idx) };
+}

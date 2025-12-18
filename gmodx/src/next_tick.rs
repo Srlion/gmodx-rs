@@ -1,13 +1,11 @@
 use std::thread;
 
 use crate::is_main_thread;
-use crate::lua::{self};
+use crate::lua::State;
 
 use super::next_tick_queue::NextTickQueue;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "tokio")]
-use tokio::sync::oneshot;
 
 static NEXT_TICK: Mutex<Option<NextTickQueue>> = Mutex::new(None);
 
@@ -23,18 +21,18 @@ where
 
 pub fn next_tick<F>(callback: F)
 where
-    F: FnOnce(&lua::State) + Send + 'static,
+    F: FnOnce(&State) + Send + 'static,
 {
     with_next_tick(|q| q.queue(callback));
 }
 
-pub fn flush_next_tick(state: &lua::State) {
-    with_next_tick(|q| q.flush(state));
+pub fn flush_next_tick(l: &State) {
+    with_next_tick(|q| q.flush(l));
 }
 
 pub fn block_until_next_tick<F>(f: F)
 where
-    F: FnOnce(&lua::State) + Send + 'static,
+    F: FnOnce(&State) + Send + 'static,
 {
     assert!(
         !is_main_thread(),
@@ -45,8 +43,8 @@ where
     let done = Arc::new(AtomicBool::new(false));
     let done2 = done.clone();
 
-    next_tick(move |state| {
-        f(state);
+    next_tick(move |l| {
+        f(l);
         done2.store(true, Ordering::Release);
         th.unpark();
     });
@@ -56,32 +54,14 @@ where
     }
 }
 
-#[cfg(feature = "tokio")]
-pub async fn async_next_tick<F, T>(f: F) -> T
-where
-    F: FnOnce(&lua::State) -> T + Send + 'static,
-    T: Send + 'static,
-{
-    let (tx, rx) = oneshot::channel();
-
-    next_tick(move |state| {
-        let _ = tx.send(f(state));
-    });
-
-    rx.await.expect("next_tick callback was dropped")
-}
-
 inventory::submit! {
     crate::open_close::new(
         2,
         "next_tick",
-        |l| {
-            let (queue, setup_timer) = NextTickQueue::new_impl();
-            {
-                let mut q = NEXT_TICK.lock().unwrap();
-                q.replace(queue);
-            }
-            setup_timer(l);
+        |_| {
+            let queue = NextTickQueue::new();
+            let mut q = NEXT_TICK.lock().unwrap();
+            q.replace(queue);
         },
         |l| {
             let mut q = NEXT_TICK.lock().unwrap();

@@ -2,6 +2,11 @@
 
 pub(crate) mod ffi;
 
+mod lock;
+pub use lock::{lock, with_lock};
+#[cfg(feature = "tokio")]
+pub use lock::{lock_async, with_lock_async};
+
 mod state;
 pub use state::State;
 
@@ -9,7 +14,7 @@ mod conversion;
 mod value_ref;
 
 mod types;
-pub use types::{LightUserData, Number, String};
+pub use types::{LightUserData, Nil, Number, String};
 
 mod value;
 pub use value::{MultiValue, Value, ValueKind};

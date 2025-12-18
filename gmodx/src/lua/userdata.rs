@@ -236,7 +236,7 @@ pub struct AnyUserData(pub(crate) Value);
 impl AnyUserData {
     #[inline]
     fn ptr(&self) -> *const c_void {
-        ffi::lua_touserdata(self.0.thread().0, self.0.index())
+        ffi::lua_touserdata(self.0.ref_state().0, self.0.index())
     }
 
     #[inline]

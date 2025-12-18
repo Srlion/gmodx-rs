@@ -27,6 +27,11 @@ impl StackGuard {
     pub fn keep(&mut self, n: i32) {
         self.top += n;
     }
+
+    #[inline]
+    pub fn top(&self) -> i32 {
+        self.top
+    }
 }
 
 impl lua::State {

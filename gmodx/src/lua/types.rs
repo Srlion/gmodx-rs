@@ -9,6 +9,8 @@ pub type Number = lua::ffi::lua_Number;
 
 pub type String = bstr::BString;
 
+pub struct Nil;
+
 /// A trait that adds `Send` requirement if `send` feature is enabled.
 #[cfg(feature = "send")]
 pub trait MaybeSend: Send {}

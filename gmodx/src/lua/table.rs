@@ -53,12 +53,12 @@ impl Table {
 
     // the lua state is only used to ensure we are on main thread
     pub fn raw_len(&self, _: &lua::State) -> usize {
-        ffi::lua_rawlen(self.0.thread().0, self.0.index())
+        ffi::lua_rawlen(self.0.ref_state().0, self.0.index())
     }
 
     // the lua state is only used to ensure we are on main thread
     pub fn has_metatable(&self, _: &lua::State) -> bool {
-        let thread = self.0.thread();
+        let thread = self.0.ref_state();
         if ffi::lua_getmetatable(thread.0, self.0.index()) == 0 {
             false
         } else {
@@ -79,7 +79,7 @@ impl Table {
     }
 
     pub fn set_metatable(&self, _: &lua::State, metatable: Option<Table>) {
-        let ref_thread = self.0.thread().0;
+        let ref_thread = self.0.ref_state().0;
         if let Some(metatable) = &metatable {
             ffi::lua_pushvalue(ref_thread, metatable.0.index());
         } else {

@@ -16,7 +16,7 @@ pub trait FromLua: Sized {
 
     // the lua state is only used to ensure we are on main thread
     fn try_from_value(value: Value, _: &lua::State) -> Result<Self> {
-        Self::try_from_stack(&value.thread(), value.index())
+        Self::try_from_stack(&value.ref_state(), value.index())
     }
 }
 

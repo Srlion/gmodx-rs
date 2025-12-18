@@ -1,3 +1,5 @@
+#[cfg(feature = "tokio")]
+use std::sync::Mutex;
 use std::{ffi::CStr, fmt::Display, mem};
 
 use crate::lua::{
@@ -5,6 +7,38 @@ use crate::lua::{
     traits::{FromLua, ToLua},
     types::{Callback, MaybeSend},
 };
+
+#[cfg(feature = "tokio")]
+static THREAD_WRAP: Mutex<Option<Function>> = Mutex::new(None);
+
+#[cfg(feature = "tokio")]
+fn get_thread_wrap() -> Function {
+    THREAD_WRAP
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("THREAD_WRAP is not initialized")
+}
+
+#[cfg(feature = "tokio")]
+inventory::submit! {
+    crate::open_close::new(
+        1,
+        "!async_thread_wrap",
+        |l| {
+            let chunk = l.load_buffer(b"
+                return function(done, f, ...)
+                    return done(f(...))
+                end
+            ", c"async_thread_wrap").expect("failed to load async thread wrap chunk");
+            let func = chunk.call::<Function>(l, ()).expect("failed to get async thread wrap function");
+            *THREAD_WRAP.lock().unwrap() = Some(func);
+        },
+        |_| {
+            *THREAD_WRAP.lock().unwrap() = None;
+        },
+    )
+}
 
 #[derive(Clone, Debug)]
 pub struct Function(pub(crate) Value);
@@ -67,6 +101,83 @@ impl Function {
             state.error_no_halt_with_stack(&err.to_string());
         }
         res
+    }
+
+    #[cfg(feature = "tokio")]
+    pub async fn call_async<R: FromLuaMulti>(&self, args: impl ToLuaMulti) -> lua::Result<R> {
+        use std::sync::Arc;
+
+        use crate::lua::{MultiValue, State, thread::ThreadStatus};
+
+        let lazy_value = Arc::new(Mutex::new(None));
+
+        let (thread, do_continue) = {
+            let Some(l) = &lua::lock_async().await else {
+                return Err(lua::Error::StateUnavailable);
+            };
+
+            let func = self.clone();
+            let thread = l.create_thread(get_thread_wrap());
+            let done = l.create_function({
+                let lazy_value = lazy_value.clone();
+                move |l: &State| {
+                    let top = ffi::lua_gettop(l.0);
+                    if top > 0 {
+                        lazy_value
+                            .lock()
+                            .unwrap()
+                            .replace(MultiValue::try_from_stack_multi(l, 1, top));
+                    }
+                }
+            });
+            thread.resume_void(l, (done, func, args))?;
+            let do_continue = matches!(
+                thread.status(l),
+                ThreadStatus::Resumable | ThreadStatus::Error
+            );
+            (thread, do_continue)
+        };
+
+        if !do_continue {
+            let thread = thread.clone();
+            tokio::task::spawn_blocking(move || {
+                loop {
+                    let Some(l) = &lua::lock() else {
+                        break Err(lua::Error::StateUnavailable);
+                    };
+                    if matches!(
+                        thread.status(l),
+                        ThreadStatus::Resumable | ThreadStatus::Error
+                    ) {
+                        break Ok(());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+            })
+            .await
+            .expect("call_async task panicked")?;
+        }
+
+        // just to lock the main state while we read the results
+        let Some(l) = &lua::lock_async().await else {
+            return Err(lua::Error::StateUnavailable);
+        };
+
+        match thread.status(l) {
+            ThreadStatus::Resumable => {
+                let nresults = if let Some(multi) = lazy_value.lock().unwrap().take() {
+                    let (multi, count) = multi?;
+                    multi.push_to_stack_multi(&l);
+                    count
+                } else {
+                    0
+                };
+                R::try_from_stack_multi(&l, -nresults, nresults).map(|(v, _)| v)
+            }
+            ThreadStatus::Error => Err(thread.1.pop_error(ffi::lua_status(thread.1.0))),
+            ThreadStatus::Yielded => panic!("thread is still yielded after completion"),
+            ThreadStatus::Running => panic!("thread is still running after completion"),
+        }
     }
 }
 

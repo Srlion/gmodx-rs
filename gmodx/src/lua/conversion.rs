@@ -5,7 +5,7 @@ use bstr::{BStr, BString};
 use num_traits::cast;
 
 use crate::lua::traits::{FromLua, ToLua};
-use crate::lua::{self, Error, FromLuaMulti, LightUserData, Result, Table, ToLuaMulti, ffi};
+use crate::lua::{self, Error, FromLuaMulti, LightUserData, Nil, Result, Table, ToLuaMulti, ffi};
 
 impl<T: ToLua> ToLua for Option<T> {
     #[inline]
@@ -27,20 +27,32 @@ impl<T: FromLua> FromLua for Option<T> {
     }
 }
 
-// Even though () means no value in Rust, we need to make it "nil"
-// This is because working with a type that is zero size with lua is so cringe
 impl ToLua for () {
+    #[inline]
+    fn push_to_stack(self, _state: &lua::State) {
+        // do nothing
+    }
+}
+
+impl FromLua for () {
+    #[inline]
+    fn try_from_stack(_state: &lua::State, _index: i32) -> Result<Self> {
+        Ok(())
+    }
+}
+
+impl ToLua for Nil {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
         ffi::lua_pushnil(state.0);
     }
 }
 
-impl FromLua for () {
+impl FromLua for Nil {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         match ffi::lua_type(state.0, index) {
-            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(()),
+            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(Nil),
             _ => Err(state.type_error(index, "nil")),
         }
     }

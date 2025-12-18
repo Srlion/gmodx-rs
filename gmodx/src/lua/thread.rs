@@ -1,22 +1,10 @@
-// thread.rs
-use crate::lua::{
-    self, FromLua, FromLuaMulti, Function, StackGuard, ToLua, ToLuaMulti, Value, ffi,
-};
+use crate::lua::{self, FromLua, FromLuaMulti, Function, State, ToLua, ToLuaMulti, Value, ffi};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ThreadStatus {
     Resumable,
+    Yielded,
     Running,
-    Finished,
-    Error,
-}
-
-#[derive(Clone, Copy)]
-enum ThreadStatusInner {
-    New(i32),
-    Running,
-    Yielded(i32),
-    Finished,
     Error,
 }
 
@@ -39,82 +27,57 @@ impl Thread {
         &self.1
     }
 
-    pub fn resume<R: FromLuaMulti>(
-        &self,
-        state: &lua::State,
-        args: impl ToLuaMulti,
-    ) -> lua::Result<R> {
-        match self.status_inner(state) {
-            ThreadStatusInner::New(_) | ThreadStatusInner::Yielded(_) => {}
+    pub fn resume<R: FromLuaMulti>(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<R> {
+        self.resume_common(l, args)?;
+
+        let thread_state = &self.1;
+        let nresults = ffi::lua_gettop(thread_state.0);
+        R::try_from_stack_multi(thread_state, -nresults, nresults).map(|(v, _)| v)
+    }
+
+    pub fn resume_void(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<()> {
+        self.resume_common(l, args)?;
+        Ok(())
+    }
+
+    fn resume_common(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<()> {
+        match self.status(l) {
+            ThreadStatus::Resumable | ThreadStatus::Yielded => {}
             _ => return Err(lua::Error::CoroutineUnresumable),
         };
 
         let thread_state = &self.1;
-        let _sg = StackGuard::new(state.0);
-
-        // Push args to main state then move to thread
-        let nargs = args.push_to_stack_multi_count(state);
-        if nargs > 0 {
-            ffi::lua_xmove(state.0, thread_state.0, nargs);
-        }
-
-        // Resume and get results
+        let nargs = args.push_to_stack_multi_count(thread_state);
         let ret = ffi::lua_resume(thread_state.0, nargs);
-        let nresults = ffi::lua_gettop(thread_state.0);
-
         match ret {
-            ffi::LUA_OK | ffi::LUA_YIELD => {
-                if nresults > 0 {
-                    ffi::lua_xmove(thread_state.0, state.0, nresults);
-                }
-                R::try_from_stack_multi(state, -nresults, nresults).map(|(v, _)| v)
-            }
-            _ => {
-                // Error: pop error from thread stack
-                if nresults > 0 {
-                    ffi::lua_xmove(thread_state.0, state.0, 1);
-                }
-                Err(state.pop_error(ret))
-            }
+            ffi::LUA_OK | ffi::LUA_YIELD => Ok(()),
+            _ => Err(thread_state.pop_error(ret)),
         }
     }
 
-    pub fn status(&self, state: &lua::State) -> ThreadStatus {
-        match self.status_inner(state) {
-            ThreadStatusInner::New(_) | ThreadStatusInner::Yielded(_) => ThreadStatus::Resumable,
-            ThreadStatusInner::Running => ThreadStatus::Running,
-            ThreadStatusInner::Finished => ThreadStatus::Finished,
-            ThreadStatusInner::Error => ThreadStatus::Error,
-        }
-    }
-
-    fn status_inner(&self, state: &lua::State) -> ThreadStatusInner {
+    pub fn status(&self, l: &State) -> ThreadStatus {
         let thread_state = &self.1;
-        if thread_state.0 == state.0 {
-            return ThreadStatusInner::Running;
+        if thread_state.0 == l.0 {
+            return ThreadStatus::Running;
         }
         let status = ffi::lua_status(thread_state.0);
-        let top = ffi::lua_gettop(thread_state.0);
+        // let top = ffi::lua_gettop(thread_state.0);
         match status {
-            ffi::LUA_YIELD => ThreadStatusInner::Yielded(top),
-            ffi::LUA_OK if top > 0 => ThreadStatusInner::New(top - 1),
-            ffi::LUA_OK => ThreadStatusInner::Finished,
-            _ => ThreadStatusInner::Error,
+            ffi::LUA_YIELD => ThreadStatus::Yielded,
+            ffi::LUA_OK => ThreadStatus::Resumable,
+            _ => ThreadStatus::Error,
         }
     }
 
-    pub fn reset(&self, state: &lua::State, func: Function) -> lua::Result<()> {
-        let status = self.status_inner(state);
+    pub fn reset(&self, l: &State, func: Function) -> lua::Result<()> {
+        let status = self.status(l);
         match status {
-            ThreadStatusInner::New(_) | ThreadStatusInner::Finished => {
+            ThreadStatus::Resumable => {
                 ffi::lua_settop(self.1.0, 0);
-                func.push_to_stack(state);
-                ffi::lua_xmove(state.0, self.1.0, 1);
+                func.push_to_stack(&self.1);
                 Ok(())
             }
-            ThreadStatusInner::Running => {
-                Err(lua::Error::Message("cannot reset running thread".into()))
-            }
+            ThreadStatus::Running => Err(lua::Error::Message("cannot reset running thread".into())),
             _ => Err(lua::Error::Message(
                 "cannot reset non-finished thread".into(),
             )),

@@ -43,6 +43,9 @@ pub enum Error {
     /// [`Thread::resume`]: crate::Thread::resume
     /// [`Thread::status`]: crate::Thread::status
     CoroutineUnresumable,
+
+    /// Lua state is closed
+    StateUnavailable,
 }
 
 impl std::fmt::Display for Error {
@@ -64,6 +67,7 @@ impl std::fmt::Display for Error {
                 cause,
             } => write!(f, "bad argument #{} to '{}' ({})", arg_num, function, cause),
             Error::CoroutineUnresumable => write!(f, "coroutine is unresumable"),
+            Error::StateUnavailable => write!(f, "Lua state is closed"),
         }
     }
 }

@@ -10,6 +10,7 @@ use crate::lua::{self, FromLua, Function, Table, ToLua, Value, ffi};
 pub struct State(pub(crate) *mut lua::ffi::lua_State);
 
 impl State {
+    #[inline(always)]
     pub(crate) fn clone(&self) -> Self {
         Self(self.0)
     }

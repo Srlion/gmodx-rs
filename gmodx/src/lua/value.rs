@@ -104,8 +104,8 @@ impl Value {
         self.inner.index
     }
 
-    pub(crate) fn thread(&self) -> lua::State {
-        self.inner.thread()
+    pub(crate) fn ref_state(&self) -> lua::State {
+        self.inner.ref_state()
     }
 }
 
@@ -244,6 +244,14 @@ impl IntoIterator for MultiValue {
 impl ToLuaMulti for MultiValue {
     fn push_to_stack_multi(self, state: &lua::State) {
         for value in self {
+            value.push_to_stack(state);
+        }
+    }
+}
+
+impl ToLuaMulti for &MultiValue {
+    fn push_to_stack_multi(self, state: &lua::State) {
+        for value in self.iter() {
             value.push_to_stack(state);
         }
     }
