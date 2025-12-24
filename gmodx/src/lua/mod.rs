@@ -2,10 +2,8 @@
 
 pub(crate) mod ffi;
 
-mod lock;
-pub use lock::{lock, with_lock};
-#[cfg(feature = "tokio")]
-pub use lock::{lock_async, with_lock_async};
+pub(crate) mod lock;
+pub use lock::{lock, lock_async, with_lock, with_lock_async};
 
 mod state;
 pub use state::State;
@@ -18,6 +16,9 @@ pub use types::{LightUserData, Nil, Number, String};
 
 mod value;
 pub use value::{MultiValue, Value, ValueKind};
+
+mod multi_value_of;
+pub use multi_value_of::MultiValueOf;
 
 mod error;
 pub use error::{Error, Result};
@@ -35,10 +36,13 @@ mod traits;
 pub use traits::{FromLua, FromLuaMulti, ObjectLike, ToLua, ToLuaMulti};
 
 mod function;
-pub use function::Function;
+pub use function::{Function, IntoLuaFunction};
 
 mod userdata;
-pub use userdata::{AnyUserData, MethodsBuilder as Methods, UserData, UserDataRef};
+pub use userdata::{
+    AnyUserData, MethodsBuilder as Methods, ScopedUserData, ScopedUserDataRef, UserData,
+    UserDataRef,
+};
 
 mod debug;
 

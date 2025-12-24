@@ -1,6 +1,6 @@
 [package]
 name = "gmodx"
-version = "0.18.0"
+version = "0.19.0"
 authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
 edition = "2024"
 license = "MIT"
@@ -23,7 +23,6 @@ tokio = ["dep:tokio", "dep:tokio-util", "send"]
 gmodx-macros = { path = "../gmodx-macros", version = "0.4.0" }
 inventory = "0.3.21"
 libloading = "0.8.9" # needs to be kept for "bindgen"
-const-str = "0.7.0"
 tokio = { version = "1", optional = true, default-features = false, features = [
     "rt-multi-thread",
     "macros",
@@ -33,9 +32,11 @@ tokio-util = { version = "0.7", optional = true, default-features = false, featu
     "rt",
 ] }
 bstr = { version = "1.12", features = ["std"], default-features = false }
-num-traits = "0.2.19"
 rustc-hash = "2.1.1"
-xutex = { git = "https://github.com/fereidani/xutex", rev = "7294a67" }
+xutex = { git = "https://github.com/Srlion/xutex", rev = "c2b9be4", features = [
+    "reentrant",
+] }
+typeid = "1.0.3"
 
 [build-dependencies]
 bindgen = "0.72.1"

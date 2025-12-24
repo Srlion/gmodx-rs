@@ -5,22 +5,22 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone)]
 pub enum Error {
     /// Lua failed to allocate memory for an operation.
-    MemoryAllocation(String),
+    MemoryAllocation(lua::String),
 
     /// A syntax error was encountered while parsing Lua source code.
     /// Optionally contains the error message from the Lua parser.
-    Syntax(String),
+    Syntax(lua::String),
 
     /// A runtime error occurred during Lua execution.
     /// Optionally contains the error message returned by Lua.
-    Runtime(String),
+    Runtime(lua::String),
 
     /// A generic error represented by a string message.
     Message(String),
 
     /// An unrecognized or unknown Lua error code was returned.
     /// Contains the raw error code from Lua.
-    Unknown { code: i32, message: String },
+    Unknown { code: i32, message: lua::String },
 
     /// A type mismatch occurred
     Type { expected: String, got: String },
@@ -96,9 +96,8 @@ impl lua::State {
             "pop_error called with non-error return code"
         );
 
-        let err_string = lua::String::try_from_stack(self, -1)
-            .expect("this error MUST be a string")
-            .to_string();
+        let err_string =
+            lua::String::try_from_stack(self, -1).expect("this error MUST be a string");
         ffi::lua_pop(self.0, 1); // pop the error object
 
         match err_code {

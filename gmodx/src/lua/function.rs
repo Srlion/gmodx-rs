@@ -23,12 +23,21 @@ fn get_thread_wrap() -> Function {
 #[cfg(feature = "tokio")]
 inventory::submit! {
     crate::open_close::new(
-        1,
-        "!async_thread_wrap",
+        0,
+        "async_thread_wrap",
         |l| {
+            // 😉 ;-)
             let chunk = l.load_buffer(b"
-                return function(done, f, ...)
-                    return done(f(...))
+                local co_yield = coroutine.yield
+                local co_resume = coroutine.resume
+                local timer_Simple = timer.Simple
+                local pcall = pcall
+                return function(co, done, f, ...)
+                    timer_Simple(0, function()
+                        return co_resume(co)
+                    end)
+                    co_yield()
+                    return done(pcall(f, ...))
                 end
             ", c"async_thread_wrap").expect("failed to load async thread wrap chunk");
             let func = chunk.call::<Function>(l, ()).expect("failed to get async thread wrap function");
@@ -76,108 +85,46 @@ impl Function {
         res
     }
 
-    /// Calls the function with the given arguments, ignoring any return values.
-    pub fn call_no_rets(&self, state: &lua::State, args: impl ToLuaMulti) -> lua::Result<()> {
-        let stack_start = ffi::lua_gettop(state.0);
-        let _sg = StackGuard::with_top(state.0, stack_start);
-        #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(state); // Push the function onto the stack
-        args.push_to_stack_multi(state);
-        let nargs = ffi::lua_gettop(state.0) - stack_start - 1;
-        match ffi::lua_pcall(state.0, nargs, 0, 0) {
-            ffi::LUA_OK => Ok(()),
-            res => Err(state.pop_error(res)),
-        }
-    }
-
-    /// Same as [`call_no_rets`], but logs any errors that occur.
-    pub fn call_no_rets_logged(
-        &self,
-        state: &lua::State,
-        args: impl ToLuaMulti,
-    ) -> lua::Result<()> {
-        let res = self.call_no_rets(state, args);
-        if let Err(err) = &res {
-            state.error_no_halt_with_stack(&err.to_string());
-        }
-        res
-    }
-
     #[cfg(feature = "tokio")]
     pub async fn call_async<R: FromLuaMulti>(&self, args: impl ToLuaMulti) -> lua::Result<R> {
-        use std::sync::Arc;
+        use crate::lua::State;
+        use tokio::sync::oneshot;
 
-        use crate::lua::{MultiValue, State, thread::ThreadStatus};
+        let (tx1, rx1) = oneshot::channel::<()>();
+        let (tx2, rx2) = oneshot::channel::<()>();
+        let pair = Mutex::new(Some((tx1, rx2)));
 
-        let lazy_value = Arc::new(Mutex::new(None));
-
-        let (thread, do_continue) = {
-            let Some(l) = &lua::lock_async().await else {
+        let func = self.clone();
+        let thread = {
+            let Some(l) = lua::lock_async().await else {
                 return Err(lua::Error::StateUnavailable);
             };
-
-            let func = self.clone();
             let thread = l.create_thread(get_thread_wrap());
             let done = l.create_function({
-                let lazy_value = lazy_value.clone();
-                move |l: &State| {
-                    let top = ffi::lua_gettop(l.0);
-                    if top > 0 {
-                        lazy_value
-                            .lock()
-                            .unwrap()
-                            .replace(MultiValue::try_from_stack_multi(l, 1, top));
+                move |_: &State| {
+                    if let Some((tx, rx)) = pair.lock().unwrap().take() {
+                        let _ = tx.send(());
+                        let _ = rx.blocking_recv();
                     }
                 }
             });
-            thread.resume_void(l, (done, func, args))?;
-            let do_continue = matches!(
-                thread.status(l),
-                ThreadStatus::Resumable | ThreadStatus::Error
-            );
-            (thread, do_continue)
+            thread.resume::<()>(&l, (&thread, done, func, args))?;
+            thread
         };
 
-        if !do_continue {
-            let thread = thread.clone();
-            tokio::task::spawn_blocking(move || {
-                loop {
-                    let Some(l) = &lua::lock() else {
-                        break Err(lua::Error::StateUnavailable);
-                    };
-                    if matches!(
-                        thread.status(l),
-                        ThreadStatus::Resumable | ThreadStatus::Error
-                    ) {
-                        break Ok(());
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                }
-            })
-            .await
-            .expect("call_async task panicked")?;
-        }
+        rx1.await.unwrap();
 
-        // just to lock the main state while we read the results
-        let Some(l) = &lua::lock_async().await else {
-            return Err(lua::Error::StateUnavailable);
+        let success = bool::try_from_stack(&thread.1, 1)?;
+        let ret = if success {
+            R::try_from_stack_multi(&thread.1, 2, ffi::lua_gettop(thread.1.0) - 1).map(|(v, _)| v)
+        } else {
+            let err_msg: lua::String = FromLua::try_from_stack(&thread.1, 2)?;
+            Err(lua::Error::Runtime(err_msg))
         };
 
-        match thread.status(l) {
-            ThreadStatus::Resumable => {
-                let nresults = if let Some(multi) = lazy_value.lock().unwrap().take() {
-                    let (multi, count) = multi?;
-                    multi.push_to_stack_multi(&l);
-                    count
-                } else {
-                    0
-                };
-                R::try_from_stack_multi(&l, -nresults, nresults).map(|(v, _)| v)
-            }
-            ThreadStatus::Error => Err(thread.1.pop_error(ffi::lua_status(thread.1.0))),
-            ThreadStatus::Yielded => panic!("thread is still yielded after completion"),
-            ThreadStatus::Running => panic!("thread is still running after completion"),
-        }
+        tx2.send(()).unwrap();
+
+        ret
     }
 }
 
@@ -188,8 +135,7 @@ impl lua::State {
     where
         F: IntoLuaFunction<Marker>,
     {
-        let callback = func.into_callback();
-        self.create_function_impl(callback)
+        func.into_function()
     }
 
     pub(crate) fn create_function_impl(&self, func: Callback) -> Function {
@@ -309,8 +255,17 @@ where
 }
 
 pub trait IntoLuaFunction<Marker> {
-    fn into_callback(self) -> Callback;
+    fn into_function(self) -> Function;
 }
+
+impl IntoLuaFunction<()> for Function {
+    fn into_function(self) -> Function {
+        self
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub struct AsyncMarker<T>(std::marker::PhantomData<T>);
 
 macro_rules! impl_into_lua_function {
     ($($name:ident),*) => {
@@ -321,10 +276,10 @@ macro_rules! impl_into_lua_function {
             Ret: IntoLuaCallbackResult<Value = RR>,
             RR: ToLuaMulti,
         {
-            fn into_callback(self) -> Callback {
+            fn into_function(self) -> Function {
                 #[allow(unused)]
                 #[allow(non_snake_case)]
-                Box::new(move |state: &lua::State| {
+                let callback = Box::new(move |state: &lua::State| {
                     let nargs = ffi::lua_gettop(state.0);
                     let mut index = 1;
                     let mut remaining = nargs;
@@ -335,9 +290,60 @@ macro_rules! impl_into_lua_function {
                     )*
                     let ret = self(state, $($name,)*).into_callback_result()?;
                     Ok(ret.push_to_stack_multi_count(state))
-                })
+                });
+                let l = lua::lock().unwrap();
+                l.create_function_impl(callback)
             }
         }
+
+        #[cfg(feature = "tokio")]
+        impl<FF, Fut, $($name,)* RR, Ret> IntoLuaFunction<AsyncMarker<($($name,)*)>> for FF
+            where
+                FF: Fn(&lua::State, $($name,)*) -> Fut + MaybeSend + 'static,
+                Fut: Future<Output = Ret> + Send + 'static,
+                $($name: FromLuaMulti,)*
+                Ret: IntoLuaCallbackResult<Value = RR>,
+                RR: ToLuaMulti + Send + 'static,
+            {
+                fn into_function(self) -> Function {
+                    use crate::lua::Nil;
+
+                    #[allow(unused, non_snake_case)]
+                    let callback = Box::new(move |thread_state: &lua::State| {
+                        if !thread_state.is_thread() {
+                            Err(lua::Error::Runtime("async functions can only be called from within a Lua coroutine".into()))?;
+                        }
+
+                        let nargs = ffi::lua_gettop(thread_state.0);
+                        let mut index = 1;
+                        let mut remaining = nargs;
+                        $(
+                            let ($name, consumed) = $name::try_from_stack_multi(thread_state, index, remaining)?;
+                            index += consumed;
+                            remaining -= consumed;
+                        )*
+
+                        let fut = self(thread_state, $($name,)*);
+
+                        let thread_state_ptr = thread_state.as_usize();
+                        crate::tokio_tasks::spawn(async move {
+                            let result = fut.await.into_callback_result();
+                            crate::next_tick(move |l| {
+                                let thread_state = lua::State::from_usize(thread_state_ptr);
+                                match result {
+                                    Ok(ret) => { lua::thread::Thread::resume_impl(&thread_state, l, (Nil, ret)).ok(); }
+                                    Err(e) => { lua::thread::Thread::resume_impl(&thread_state, l, e.to_string()).ok(); }
+                                }
+                            });
+                        });
+
+                        Ok(ffi::lua_yield(thread_state.0, 0))
+                    });
+                    let l = lua::lock().unwrap();
+                    l.create_function_impl(callback)
+                }
+            }
+
     };
 }
 

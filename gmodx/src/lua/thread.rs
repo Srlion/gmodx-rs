@@ -1,4 +1,7 @@
-use crate::lua::{self, FromLua, FromLuaMulti, Function, State, ToLua, ToLuaMulti, Value, ffi};
+use crate::{
+    lua::{self, FromLua, FromLuaMulti, Function, State, ToLua, ToLuaMulti, Value, ffi},
+    open_close::get_main_lua_state,
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ThreadStatus {
@@ -28,25 +31,23 @@ impl Thread {
     }
 
     pub fn resume<R: FromLuaMulti>(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<R> {
-        self.resume_common(l, args)?;
+        Self::resume_impl(&self.1, l, args)?;
 
         let thread_state = &self.1;
-        let nresults = ffi::lua_gettop(thread_state.0);
-        R::try_from_stack_multi(thread_state, -nresults, nresults).map(|(v, _)| v)
+        let nresults = ffi::lua_gettop(l.0);
+        R::try_from_stack_multi(thread_state, nresults + 1, nresults).map(|(v, _)| v)
     }
 
-    pub fn resume_void(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<()> {
-        self.resume_common(l, args)?;
-        Ok(())
-    }
-
-    fn resume_common(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<()> {
-        match self.status(l) {
+    pub(crate) fn resume_impl(
+        thread_state: &lua::State,
+        l: &State,
+        args: impl ToLuaMulti,
+    ) -> lua::Result<()> {
+        match Self::status_impl(thread_state, l) {
             ThreadStatus::Resumable | ThreadStatus::Yielded => {}
             _ => return Err(lua::Error::CoroutineUnresumable),
         };
 
-        let thread_state = &self.1;
         let nargs = args.push_to_stack_multi_count(thread_state);
         let ret = ffi::lua_resume(thread_state.0, nargs);
         match ret {
@@ -56,7 +57,10 @@ impl Thread {
     }
 
     pub fn status(&self, l: &State) -> ThreadStatus {
-        let thread_state = &self.1;
+        Self::status_impl(&self.1, l)
+    }
+
+    fn status_impl(thread_state: &lua::State, l: &State) -> ThreadStatus {
         if thread_state.0 == l.0 {
             return ThreadStatus::Running;
         }
@@ -91,6 +95,10 @@ impl lua::State {
         let thread_state = lua::State(thread_ptr);
         func.push_to_stack(&thread_state);
         Thread(Value::pop_from_stack(self), thread_state)
+    }
+
+    pub fn is_thread(&self) -> bool {
+        get_main_lua_state().0 != self.0
     }
 }
 

@@ -15,6 +15,18 @@ impl State {
         Self(self.0)
     }
 
+    #[allow(unused)]
+    #[inline(always)]
+    pub(crate) fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+
+    #[allow(unused)]
+    #[inline(always)]
+    pub(crate) fn from_usize(u: usize) -> Self {
+        Self(u as *mut lua::ffi::lua_State)
+    }
+
     #[inline]
     pub fn type_of(&self, index: i32) -> i32 {
         ffi::lua_type(self.0, index)

@@ -1,7 +1,13 @@
-use crate::lua::{self, Function, ObjectLike as _, Table};
+use crate::lua::{IntoLuaFunction, ObjectLike as _, Table, with_lock};
 
-pub fn create(timer_name: &str, delay: i32, reps: i32, callback: &Function) {
-    lua::with_lock(|l| {
+pub fn create<Marker>(
+    timer_name: &str,
+    delay: i32,
+    reps: i32,
+    callback: impl IntoLuaFunction<Marker>,
+) {
+    with_lock(|l| {
+        let callback = callback.into_function();
         l.globals()
             .get(l, "timer")
             .and_then(|t: Table| t.call::<()>(l, "Create", (timer_name, delay, reps, callback)))
@@ -11,7 +17,7 @@ pub fn create(timer_name: &str, delay: i32, reps: i32, callback: &Function) {
 }
 
 pub fn remove(timer_name: &str) {
-    lua::with_lock(|l| {
+    with_lock(|l| {
         l.globals()
             .get(l, "timer")
             .and_then(|t: Table| t.call::<()>(l, "Remove", timer_name))

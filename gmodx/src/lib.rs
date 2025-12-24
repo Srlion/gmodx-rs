@@ -3,6 +3,9 @@ pub mod macros;
 
 pub mod lua;
 
+pub mod tick;
+pub use tick::{flush_next_tick, next_tick, on_tick};
+
 pub mod timer;
 
 pub mod open_close;
@@ -13,12 +16,6 @@ pub use gmodx_macros::*;
 pub use inventory;
 
 pub mod sync;
-
-mod next_tick_queue;
-pub use next_tick_queue::NextTickQueue;
-
-mod next_tick;
-pub use next_tick::{block_until_next_tick, flush_next_tick, next_tick};
 
 #[cfg(feature = "tokio")]
 pub mod tokio_tasks;

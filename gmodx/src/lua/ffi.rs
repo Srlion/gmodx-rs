@@ -408,3 +408,11 @@ pub fn lua_tothread(L: *mut lua_State, idx: i32) -> *mut lua_State {
 pub fn lua_getfenv(L: *mut lua_State, idx: i32) {
     unsafe { FFI.lua_getfenv(L, idx) };
 }
+
+/// Pushes the thread represented by `L` onto the stack.
+///
+/// Returns `true` if the thread pushed is the main thread.
+#[inline(always)]
+pub fn lua_pushthread(L: *mut lua_State) -> bool {
+    unsafe { FFI.lua_pushthread(L) == 1 }
+}

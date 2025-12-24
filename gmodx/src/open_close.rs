@@ -1,6 +1,11 @@
-use std::{collections::HashSet, sync::atomic::AtomicBool};
+use std::{
+    collections::HashSet,
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering},
+};
 
 use crate::lua::{self, ffi};
+
+static MAIN_LUA_STATE: AtomicPtr<lua::ffi::lua_State> = AtomicPtr::new(std::ptr::null_mut());
 
 thread_local! {
     static IS_MAIN_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -14,7 +19,7 @@ static GMOD_CLOSED: AtomicBool = AtomicBool::new(true);
 
 #[inline]
 pub fn is_closed() -> bool {
-    GMOD_CLOSED.load(std::sync::atomic::Ordering::Acquire)
+    GMOD_CLOSED.load(Ordering::Acquire)
 }
 
 #[inline]
@@ -62,10 +67,17 @@ fn get_sorted_modules() -> Vec<&'static OpenClose> {
     modules
 }
 
+#[inline]
+pub(crate) fn get_main_lua_state() -> lua::State {
+    let ptr = MAIN_LUA_STATE.load(Ordering::Acquire);
+    lua::State(ptr)
+}
+
 #[allow(unused)]
 pub fn load_all(state: &lua::State) {
+    MAIN_LUA_STATE.store(state.0, Ordering::Release);
     IS_MAIN_THREAD.with(|cell| cell.set(true));
-    GMOD_CLOSED.store(false, std::sync::atomic::Ordering::Release);
+    GMOD_CLOSED.store(false, Ordering::Release);
 
     let modules = get_sorted_modules();
     for module in &modules {
@@ -81,7 +93,8 @@ pub fn load_all(state: &lua::State) {
 
 #[allow(unused)]
 pub fn unload_all(state: &lua::State) {
-    GMOD_CLOSED.store(true, std::sync::atomic::Ordering::Release);
+    GMOD_CLOSED.store(true, Ordering::Release);
+    MAIN_LUA_STATE.store(std::ptr::null_mut(), Ordering::Release);
 
     let modules = get_sorted_modules();
     // Unload in reverse order

@@ -119,7 +119,7 @@ impl fmt::Debug for ValueRef {
 
 inventory::submit! {
     crate::open_close::new(
-        0,
+        -999,
         "lua/reference",
         |l| {
             let thread = ffi::new_thread(l.0);

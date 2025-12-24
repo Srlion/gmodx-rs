@@ -2,10 +2,9 @@ use std::ffi::CString;
 
 use bstr::ByteSlice as _;
 use bstr::{BStr, BString};
-use num_traits::cast;
 
 use crate::lua::traits::{FromLua, ToLua};
-use crate::lua::{self, Error, FromLuaMulti, LightUserData, Nil, Result, Table, ToLuaMulti, ffi};
+use crate::lua::{self, FromLuaMulti, LightUserData, Nil, Result, Table, ToLuaMulti, ffi};
 
 impl<T: ToLua> ToLua for Option<T> {
     #[inline]
@@ -182,14 +181,6 @@ impl ToLua for &CString {
     }
 }
 
-#[inline]
-fn from_lua_f64(state: &lua::State, index: i32) -> Result<f64> {
-    match ffi::lua_type(state.0, index) {
-        ffi::LUA_TNUMBER | ffi::LUA_TSTRING => Ok(ffi::lua_tonumber(state.0, index)),
-        _ => Err(state.type_error(index, "number")),
-    }
-}
-
 impl<T> ToLua for &Vec<T>
 where
     for<'a> &'a T: ToLua,
@@ -236,59 +227,76 @@ impl<T: FromLua> FromLua for Vec<T> {
     }
 }
 
-// Converts numeric types to/from Lua's f64, clamping to the target type's range on conversion back.
-macro_rules! impl_lua_number_fit {
-    (float: $($t:ty),*) => {$(
-        impl ToLua for $t {
-            #[inline]
-            fn push_to_stack(self, state: &lua::State) {
-                ffi::lua_pushnumber(state.0, self as f64);
-            }
-        }
+#[inline]
+fn from_lua_f64(state: &lua::State, index: i32) -> Result<f64> {
+    match ffi::lua_type(state.0, index) {
+        ffi::LUA_TNUMBER | ffi::LUA_TSTRING => Ok(ffi::lua_tonumber(state.0, index)),
+        _ => Err(state.type_error(index, "number")),
+    }
+}
 
+macro_rules! impl_num_from_lua {
+    ($($t:ty),*) => {$(
         impl FromLua for $t {
             #[inline]
             fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-                let n = from_lua_f64(state, index)?;
-                cast(n).ok_or_else(|| {
-                    lua::Error::Message(format!("failed to convert Lua number {n} to {}", stringify!($t)))
-                })
-            }
-        }
-    )*};
-    (int: $($t:ty),*) => {$(
-        impl ToLua for $t {
-            #[inline]
-            fn push_to_stack(self, state: &lua::State) {
-                ffi::lua_pushnumber(state.0, self as f64);
-            }
-        }
-
-        impl FromLua for $t {
-            #[inline]
-            fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-                let n = from_lua_f64(state, index)?;
-                let n = if n.is_nan() {
-                    0.0
-                } else if n.is_infinite() {
-                    if n.is_sign_positive() { <$t>::MAX as f64 } else { <$t>::MIN as f64 }
-                } else {
-                    n
-                };
-                Ok(n.clamp(<$t>::MIN as f64, <$t>::MAX as f64) as $t)
+                Ok(from_lua_f64(state, index)? as $t)
             }
         }
     )*};
 }
-impl_lua_number_fit!(int: i8, u8, i16, u16, i32, u32);
-impl_lua_number_fit!(float: f32, f64);
 
-#[cfg(target_pointer_width = "32")]
-impl_lua_number_fit!(int: isize);
-#[cfg(target_pointer_width = "32")]
-impl_lua_number_fit!(int: usize);
+macro_rules! impl_big_from_lua {
+    (signed: $($t:ty),*) => {$(
+        impl FromLua for $t {
+            #[inline]
+            fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+                match ffi::lua_type(state.0, index) {
+                    ffi::LUA_TNUMBER => Ok(ffi::lua_tonumber(state.0, index) as $t),
+                    ffi::LUA_TSTRING => BString::try_from_stack(state, index)?
+                        .to_str()
+                        .map_err(|_| state.type_error(index, "number"))?
+                        .parse()
+                        .map_err(|_| state.type_error(index, "number")),
+                    _ => Err(state.type_error(index, "number")),
+                }
+            }
+        }
+    )*};
+    (unsigned: $($t:ty),*) => {$(
+        impl FromLua for $t {
+            #[inline]
+            fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+                match ffi::lua_type(state.0, index) {
+                    ffi::LUA_TNUMBER => Ok(ffi::lua_tonumber(state.0, index) as $t),
+                    ffi::LUA_TSTRING => {
+                        let s = BString::try_from_stack(state, index)?;
+                        let s = s.to_str().map_err(|_| state.type_error(index, "number"))?;
+                        if s.trim_start().starts_with('-') {
+                            Ok(0)
+                        } else {
+                            s.parse().map_err(|_| state.type_error(index, "number"))
+                        }
+                    }
+                    _ => Err(state.type_error(index, "number")),
+                }
+            }
+        }
+    )*};
+}
 
-macro_rules! impl_lua_number_big {
+macro_rules! impl_num_to_lua {
+    ($($t:ty),*) => {$(
+        impl ToLua for $t {
+            #[inline]
+            fn push_to_stack(self, state: &lua::State) {
+                ffi::lua_pushnumber(state.0, self as f64);
+            }
+        }
+    )*};
+}
+
+macro_rules! impl_big_to_lua {
     (signed: $($t:ty),*) => {$(
         impl ToLua for $t {
             #[inline]
@@ -300,7 +308,6 @@ macro_rules! impl_lua_number_big {
                 }
             }
         }
-        impl_lua_number_big!(@from_lua $t);
     )*};
     (unsigned: $($t:ty),*) => {$(
         impl ToLua for $t {
@@ -313,46 +320,28 @@ macro_rules! impl_lua_number_big {
                 }
             }
         }
-        impl_lua_number_big!(@from_lua $t);
     )*};
-    (@from_lua $t:ty) => {
-        impl FromLua for $t {
-            #[inline]
-            fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-                match ffi::lua_type(state.0, index) {
-                    ffi::LUA_TNUMBER => {
-                        let n = ffi::lua_tonumber(state.0, index);
-                        if n.is_nan() {
-                            Ok(0)
-                        } else if n.is_infinite() {
-                            Ok(if n.is_sign_positive() { <$t>::MAX } else { <$t>::MIN })
-                        } else {
-                            cast(n).ok_or_else(|| {
-                                Error::Message(format!(
-                                    "failed to convert number {n:?} to {}",
-                                    stringify!(<$t>)
-                                ))
-                            })
-                        }
-                    },
-                    ffi::LUA_TSTRING => BString::try_from_stack(state, index)?
-                        .to_str()
-                        .map_err(|_| state.type_error(index, "number"))?
-                        .parse()
-                        .map_err(|_| state.type_error(index, "number")),
-                    _ => Err(state.type_error(index, "number")),
-                }
-            }
-        }
-    };
 }
-impl_lua_number_big!(signed: i64, i128);
-impl_lua_number_big!(unsigned: u64, u128);
 
+impl_num_from_lua!(f32, f64, i8, u8, i16, u16, i32, u32);
+impl_num_to_lua!(f32, f64, i8, u8, i16, u16, i32, u32);
+#[cfg(target_pointer_width = "32")]
+impl_num_from_lua!(isize, usize);
+#[cfg(target_pointer_width = "32")]
+impl_num_to_lua!(isize, usize);
+
+impl_big_from_lua!(signed: i64, i128);
+impl_big_from_lua!(unsigned: u64, u128);
+impl_big_to_lua!(signed: i64, i128);
+impl_big_to_lua!(unsigned: u64, u128);
 #[cfg(target_pointer_width = "64")]
-impl_lua_number_big!(signed: isize);
+impl_big_from_lua!(signed: isize);
 #[cfg(target_pointer_width = "64")]
-impl_lua_number_big!(unsigned: usize);
+impl_big_from_lua!(unsigned: usize);
+#[cfg(target_pointer_width = "64")]
+impl_big_to_lua!(signed: isize);
+#[cfg(target_pointer_width = "64")]
+impl_big_to_lua!(unsigned: usize);
 
 macro_rules! impl_tuple_lua_multi {
     ($($name:ident),+) => {
