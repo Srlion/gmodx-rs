@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::CString;
 
 use bstr::ByteSlice as _;
@@ -224,6 +225,51 @@ impl<T: FromLua> FromLua for Vec<T> {
             vec.push(value);
         }
         Ok(vec)
+    }
+}
+
+impl<K: ToLua, V: ToLua> ToLua for HashMap<K, V> {
+    fn push_to_stack(self, l: &lua::State) {
+        let table = l.create_table_with_capacity(0, self.len() as i32);
+        for (k, v) in self {
+            table.raw_set(l, k, v);
+        }
+        table.push_to_stack(l);
+    }
+}
+
+impl<K, V> ToLua for &HashMap<K, V>
+where
+    for<'a> &'a K: ToLua,
+    for<'a> &'a V: ToLua,
+{
+    fn push_to_stack(self, l: &lua::State) {
+        let table = l.create_table_with_capacity(0, self.len() as i32);
+        for (k, v) in self {
+            table.raw_set(l, k, v);
+        }
+        table.push_to_stack(l);
+    }
+}
+
+impl<K: FromLua + Eq + std::hash::Hash, V: FromLua> FromLua for HashMap<K, V> {
+    fn try_from_stack(l: &lua::State, index: i32) -> Result<Self> {
+        if ffi::lua_type(l.0, index) != ffi::LUA_TTABLE {
+            return Err(l.type_error(index, "table"));
+        }
+        let _sg = l.stack_guard(); // to pop any extra values we push
+        let mut map = HashMap::new();
+        let abs_idx = ffi::lua_absindex(l.0, index);
+        // push nil onto the stack to indicate that we want to start iterating
+        ffi::lua_pushnil(l.0);
+        while ffi::lua_next(l.0, abs_idx) != 0 {
+            let v = V::try_from_stack(l, -1)?;
+            let k = K::try_from_stack(l, -2)?;
+            // pop the value, keep the key for the next iteration
+            ffi::lua_pop(l.0, 1);
+            map.insert(k, v);
+        }
+        Ok(map)
     }
 }
 

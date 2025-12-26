@@ -86,6 +86,17 @@ impl Table {
         }
     }
 
+    #[inline]
+    pub fn pairs<K: FromLua, V: FromLua>(&self, state: &lua::State) -> PairsIter<K, V> {
+        PairsIter {
+            table: self.clone(),
+            state: state.clone(),
+            key: Nil.to_value(state),
+            done: false,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
     pub fn set_metatable(&self, _: &lua::State, metatable: Option<Table>) {
         let ref_thread = self.0.ref_state().0;
         if let Some(metatable) = &metatable {
@@ -240,6 +251,42 @@ impl<V: FromLua> Iterator for IPairsIter<V> {
         V::try_from_stack(&self.state, -1)
             .ok()
             .map(|value| (self.index, value))
+    }
+}
+
+pub struct PairsIter<K, V> {
+    table: Table,
+    state: lua::State,
+    key: Value, // current key (starts as Nil)
+    done: bool,
+    _phantom: std::marker::PhantomData<(K, V)>,
+}
+
+impl<K: FromLua, V: FromLua> Iterator for PairsIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        let _sg = self.state.stack_guard();
+        (&self.table).push_to_stack(&self.state);
+        (&self.key).push_to_stack(&self.state);
+
+        if ffi::lua_next(self.state.0, -2) == 0 {
+            self.done = true;
+            return None;
+        }
+
+        // save key for next iteration
+        self.key = Value::from_stack(&self.state, -2);
+
+        // stack: table, key, value
+        let v = V::try_from_stack(&self.state, -1).ok()?;
+        let k = K::try_from_stack(&self.state, -2).ok()?;
+
+        Some((k, v))
     }
 }
 

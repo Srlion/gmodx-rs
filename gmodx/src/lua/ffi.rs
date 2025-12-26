@@ -416,3 +416,8 @@ pub fn lua_getfenv(L: *mut lua_State, idx: i32) {
 pub fn lua_pushthread(L: *mut lua_State) -> bool {
     unsafe { FFI.lua_pushthread(L) == 1 }
 }
+
+#[inline(always)]
+pub fn lua_next(L: *mut lua_State, idx: i32) -> i32 {
+    unsafe { FFI.lua_next(L, idx) }
+}
