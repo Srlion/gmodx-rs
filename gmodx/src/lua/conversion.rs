@@ -361,17 +361,24 @@ impl FromLua for rust_decimal::Decimal {
 }
 
 #[cfg(feature = "rust_decimal")]
-impl ToLua for rust_decimal::Decimal {
+impl ToLua for &rust_decimal::Decimal {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
         use rust_decimal::prelude::ToPrimitive;
-
         if let Some(f) = self.to_f64() {
-            if rust_decimal::Decimal::try_from(f).ok() == Some(self) {
+            if rust_decimal::Decimal::try_from(f).is_ok_and(|d| d == *self) {
                 return f.push_to_stack(state);
             }
         }
         self.to_string().push_to_stack(state)
+    }
+}
+
+#[cfg(feature = "rust_decimal")]
+impl ToLua for rust_decimal::Decimal {
+    #[inline]
+    fn push_to_stack(self, state: &lua::State) {
+        (&self).push_to_stack(state)
     }
 }
 
