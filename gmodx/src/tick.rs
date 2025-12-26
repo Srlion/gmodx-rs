@@ -49,9 +49,6 @@ pub fn flush_next_tick(l: &lua::State) {
     while let Some(f) = ONESHOT_HOOKS.pop() {
         f(l);
         if Instant::now() >= deadline {
-            println!(
-                "[gmodx] Next-tick tasks budget exceeded, deferring remaining tasks to next tick"
-            );
             break;
         }
     }
