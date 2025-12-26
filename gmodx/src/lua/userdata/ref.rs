@@ -119,7 +119,7 @@ impl AnyUserData {
 
 impl lua::State {
     pub fn create_userdata<T: UserData>(&self, ud: T) -> UserDataRef<T> {
-        let (ptr, any) = self.create_userdata_impl(RefCell::new(ud), T::meta_methods, T::methods);
+        let (ptr, any) = self.create_userdata_impl::<_, T>(RefCell::new(ud));
         UserDataRef {
             ptr,
             any,

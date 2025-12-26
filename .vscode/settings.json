@@ -1,6 +1,7 @@
 {
     "rust-analyzer.cargo.features": [
-        "tokio",
-        "send",
+        // "tokio",
+        // "send",
+        // "rust_decimal"
     ]
 }

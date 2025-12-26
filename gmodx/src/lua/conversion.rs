@@ -343,6 +343,38 @@ impl_big_to_lua!(signed: isize);
 #[cfg(target_pointer_width = "64")]
 impl_big_to_lua!(unsigned: usize);
 
+#[cfg(feature = "rust_decimal")]
+impl FromLua for rust_decimal::Decimal {
+    #[inline]
+    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+        match ffi::lua_type(state.0, index) {
+            ffi::LUA_TNUMBER => rust_decimal::Decimal::try_from(ffi::lua_tonumber(state.0, index))
+                .map_err(|_| state.type_error(index, "decimal")),
+            ffi::LUA_TSTRING => BString::try_from_stack(state, index)?
+                .to_str()
+                .map_err(|_| state.type_error(index, "decimal"))?
+                .parse()
+                .map_err(|_| state.type_error(index, "decimal")),
+            _ => Err(state.type_error(index, "decimal")),
+        }
+    }
+}
+
+#[cfg(feature = "rust_decimal")]
+impl ToLua for rust_decimal::Decimal {
+    #[inline]
+    fn push_to_stack(self, state: &lua::State) {
+        use rust_decimal::prelude::ToPrimitive;
+
+        if let Some(f) = self.to_f64() {
+            if rust_decimal::Decimal::try_from(f).ok() == Some(self) {
+                return f.push_to_stack(state);
+            }
+        }
+        self.to_string().push_to_stack(state)
+    }
+}
+
 macro_rules! impl_tuple_lua_multi {
     ($($name:ident),+) => {
         impl<$($name),+> ToLuaMulti for ($($name,)+)

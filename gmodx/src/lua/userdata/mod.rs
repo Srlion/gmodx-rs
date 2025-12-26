@@ -64,15 +64,15 @@ pub trait UserData {
     where
         Self: Sized,
     {
-        push_methods_table::<Self>(state, Self::methods);
+        push_methods_table::<Self>(state);
         Table(Value::pop_from_stack(state))
     }
 }
 
-fn push_methods_table<T>(state: &lua::State, methods: fn(&mut MethodsBuilder)) {
+fn push_methods_table<T: UserData>(state: &lua::State) {
     if ffi::luaL_newmetatable(state.0, unique_id::<T>().as_ptr()) {
         let mut mb = MethodsBuilder::new();
-        methods(&mut mb);
+        T::methods(&mut mb);
         for (name, func) in mb.0 {
             func.push_to_stack(state);
             ffi::lua_setfield(state.0, -2, name.as_ptr());
@@ -81,12 +81,9 @@ fn push_methods_table<T>(state: &lua::State, methods: fn(&mut MethodsBuilder)) {
 }
 
 impl lua::State {
-    pub(crate) fn create_userdata_impl<T>(
-        &self,
-        ud: T,
-        meta_methods: fn(&mut MethodsBuilder),
-        methods: fn(&mut MethodsBuilder),
-    ) -> (*mut c_void, AnyUserData) {
+    // We take `I` because create_userdata_impl is used with RefCell<T> and other wrappers.
+    // So we need the actual UserData type separately for underlying methods.
+    pub(crate) fn create_userdata_impl<T, I: UserData>(&self, ud: T) -> (*mut c_void, AnyUserData) {
         // Userdata: 1
         let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<T>());
 
@@ -104,7 +101,7 @@ impl lua::State {
 
         // UserData metatable: 2
         let mut mb = MethodsBuilder::new();
-        meta_methods(&mut mb);
+        I::meta_methods(&mut mb);
 
         ffi::lua_createtable(self.0, 0, mb.0.len() as i32);
         {
@@ -130,7 +127,7 @@ impl lua::State {
         ffi::lua_createtable(self.0, 0, 1);
 
         // Methods table: 5
-        push_methods_table::<T>(self, methods);
+        push_methods_table::<I>(self);
 
         // Set methods table as __index of store's metatable
         ffi::lua_setfield(self.0, -2, c"__index".as_ptr()); // pops methods table

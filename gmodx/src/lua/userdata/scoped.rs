@@ -157,7 +157,7 @@ impl lua::State {
                 Rc::new(RefCell::new(Some(value)))
             }
         };
-        let (ptr, any) = self.create_userdata_impl(value.clone(), T::meta_methods, T::methods);
+        let (ptr, any) = self.create_userdata_impl::<_, T>(value.clone());
         ScopedUserData(ScopedUserDataRef {
             ptr: ptr as usize,
             value,

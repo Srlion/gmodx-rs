@@ -1,7 +1,15 @@
 use crate::lua::{
-    self, FromLuaMulti, Function, Result, ToLuaMulti, Value, ffi,
+    self, FromLuaMulti, Function, Nil, Result, ToLuaMulti, Value, ffi,
     traits::{FromLua, ObjectLike, ToLua},
 };
+
+// () pushes nothing, so we need to ensure at least one value is pushed to not segfault
+fn push_atleast_one<T: ToLuaMulti>(state: &lua::State, value: T) {
+    let count = value.push_to_stack_multi_count(state);
+    if count == 0 {
+        Nil.push_to_stack(state);
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Table(pub(crate) Value);
@@ -36,8 +44,8 @@ impl Table {
         let _sg = state.stack_guard();
 
         self.push_to_stack(state); // push the table
-        key.push_to_stack(state); // push the key
-        value.push_to_stack(state); // push the value
+        push_atleast_one(state, key); // push the key
+        push_atleast_one(state, value); // push the value
         ffi::lua_rawset(state.0, -3);
     }
 
@@ -45,7 +53,7 @@ impl Table {
         let _sg = state.stack_guard();
 
         self.push_to_stack(state); // push the table
-        key.push_to_stack(state); // push the key
+        push_atleast_one(state, key); // push the key
         ffi::lua_rawget(state.0, -2);
 
         V::try_from_stack(state, -1)
@@ -104,8 +112,8 @@ impl Table {
 
         ffi::lua_pushcfunction(state.0, Some(safe_settable));
         self.push_to_stack(state); // push the table
-        key.push_to_stack(state); // push the key
-        value.push_to_stack(state); // push the value
+        push_atleast_one(state, key); // push the key
+        push_atleast_one(state, value); // push the value
         state.protect_lua_call(3, 0)?;
 
         Ok(())
@@ -126,7 +134,7 @@ impl Table {
 
         ffi::lua_pushcfunction(state.0, Some(safe_gettable));
         self.push_to_stack(state); // push the table
-        key.push_to_stack(state); // push the key
+        push_atleast_one(state, key); // push the key
         state.protect_lua_call(2, 1)?;
 
         V::try_from_stack(state, -1)
