@@ -10,7 +10,7 @@ type Hook = Box<dyn Fn(&lua::State) -> bool + Send>;
 type Task = Box<dyn FnOnce(&lua::State) + Send>;
 
 const DEFAULT_TICK_RATE: f64 = 66.6667;
-const BUDGET_FRACTION: f64 = 0.03; // 3% of tick interval
+const BUDGET_FRACTION: f64 = 0.06; // 6% of tick interval
 
 static HOOKS: Mutex<Vec<Hook>> = Mutex::new(Vec::new());
 static PENDING_HOOKS: SegQueue<Hook> = SegQueue::new();
