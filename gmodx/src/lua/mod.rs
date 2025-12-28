@@ -3,7 +3,7 @@
 pub(crate) mod ffi;
 
 pub(crate) mod lock;
-pub use lock::{lock, lock_async, with_lock, with_lock_async};
+pub use lock::{lock, lock_async, try_lock, with_lock, with_lock_async};
 
 mod state;
 pub use state::State;

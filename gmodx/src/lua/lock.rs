@@ -60,6 +60,10 @@ pub fn lock() -> Option<StateGuard> {
     get_state_guard(LUA_LOCK.lock())
 }
 
+pub fn try_lock() -> Option<StateGuard> {
+    LUA_LOCK.try_lock().and_then(get_state_guard)
+}
+
 pub fn with_lock<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&lua::State) -> R,
