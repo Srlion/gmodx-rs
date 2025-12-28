@@ -31,13 +31,14 @@ inventory::submit! {
                 local co_yield = coroutine.yield
                 local co_resume = coroutine.resume
                 local timer_Simple = timer.Simple
-                local pcall = pcall
+                local xpcall = xpcall
+                local debug_traceback = debug.traceback
                 return function(co, done, f, ...)
                     timer_Simple(0, function()
                         return co_resume(co)
                     end)
                     co_yield()
-                    return done(pcall(f, ...))
+                    return done(xpcall(f, debug_traceback, ...))
                 end
             ", c"async_thread_wrap").expect("failed to load async thread wrap chunk");
             let func = chunk.call::<Function>(l, ()).expect("failed to get async thread wrap function");
@@ -70,19 +71,6 @@ impl Function {
         }
         let nresults = ffi::lua_gettop(state.0) - stack_start;
         R::try_from_stack_multi(state, stack_start + 1, nresults).map(|(v, _)| v)
-    }
-
-    /// Same as [`call`], but logs any errors that occur.
-    pub fn call_logged<R: FromLuaMulti>(
-        &self,
-        state: &lua::State,
-        args: impl ToLuaMulti,
-    ) -> lua::Result<R> {
-        let res = self.call(state, args);
-        if let Err(err) = &res {
-            state.error_no_halt_with_stack(&err.to_string());
-        }
-        res
     }
 
     #[cfg(feature = "tokio")]

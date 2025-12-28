@@ -21,7 +21,7 @@ mod multi_value_of;
 pub use multi_value_of::MultiValueOf;
 
 mod error;
-pub use error::{Error, Result};
+pub use error::{Error, LuaResultExt, Result};
 
 mod stack_guard;
 pub use stack_guard::StackGuard;

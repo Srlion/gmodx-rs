@@ -127,3 +127,25 @@ impl lua::State {
         }
     }
 }
+
+pub trait LuaResultExt<T> {
+    /// Logs the error if present, returns self unchanged.
+    fn logged(self) -> Self;
+    /// Logs the error if present, returns Ok value as Option.
+    fn log(self) -> Option<T>;
+}
+
+impl<T> LuaResultExt<T> for lua::Result<T> {
+    fn logged(self) -> Self {
+        if let Err(err) = &self {
+            if let Some(l) = lua::lock() {
+                l.error_no_halt_with_stack(&err.to_string());
+            }
+        }
+        self
+    }
+
+    fn log(self) -> Option<T> {
+        self.logged().ok()
+    }
+}
