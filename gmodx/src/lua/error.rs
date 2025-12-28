@@ -138,8 +138,11 @@ pub trait LuaResultExt<T> {
 impl<T> LuaResultExt<T> for lua::Result<T> {
     fn logged(self) -> Self {
         if let Err(err) = &self {
-            if let Some(l) = lua::lock() {
-                l.error_no_halt_with_stack(&err.to_string());
+            let e = err.to_string();
+            if let Some(l) = lua::try_lock() {
+                l.error_no_halt_with_stack(&e);
+            } else {
+                crate::next_tick(move |l| l.error_no_halt_with_stack(&e));
             }
         }
         self
