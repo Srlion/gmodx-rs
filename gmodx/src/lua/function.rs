@@ -34,6 +34,7 @@ inventory::submit! {
                 local xpcall = xpcall
                 local debug_traceback = debug.traceback
                 return function(co, done, f, ...)
+                    -- We need to delay because trying to resume immediately causes tokio to panic
                     timer_Simple(0, function()
                         return co_resume(co)
                     end)
@@ -75,11 +76,14 @@ impl Function {
 
     #[cfg(feature = "tokio")]
     pub async fn call_async<R: FromLuaMulti>(&self, args: impl ToLuaMulti) -> lua::Result<R> {
-        use crate::lua::State;
+        use std::sync::mpsc;
+
         use tokio::sync::oneshot;
 
+        use crate::lua::State;
+
         let (tx1, rx1) = oneshot::channel::<()>();
-        let (tx2, rx2) = oneshot::channel::<()>();
+        let (tx2, rx2) = mpsc::sync_channel::<()>(0);
         let pair = Mutex::new(Some((tx1, rx2)));
 
         let func = self.clone();
@@ -92,7 +96,7 @@ impl Function {
                 move |_: &State| {
                     if let Some((tx, rx)) = pair.lock().unwrap().take() {
                         let _ = tx.send(());
-                        let _ = rx.blocking_recv();
+                        let _ = rx.recv();
                     }
                 }
             });
@@ -102,11 +106,13 @@ impl Function {
 
         rx1.await.unwrap();
 
-        let success = bool::try_from_stack(&thread.1, 1)?;
+        let thread_state = &thread.lua_state();
+        let success = bool::try_from_stack(thread_state, 1)?;
         let ret = if success {
-            R::try_from_stack_multi(&thread.1, 2, ffi::lua_gettop(thread.1.0) - 1).map(|(v, _)| v)
+            R::try_from_stack_multi(thread_state, 2, ffi::lua_gettop(thread_state.0) - 1)
+                .map(|(v, _)| v)
         } else {
-            let err_msg: lua::String = FromLua::try_from_stack(&thread.1, 2)?;
+            let err_msg: lua::String = FromLua::try_from_stack(thread_state, 2)?;
             Err(lua::Error::Runtime(err_msg))
         };
 

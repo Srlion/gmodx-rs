@@ -11,29 +11,30 @@ pub enum ThreadStatus {
     Error,
 }
 
-pub struct Thread(pub(crate) Value, pub(crate) lua::State);
-
-#[cfg(feature = "send")]
-unsafe impl Send for Thread {}
-#[cfg(feature = "send")]
-unsafe impl Sync for Thread {}
+pub struct Thread(pub(crate) Value, pub(crate) usize);
 
 impl Clone for Thread {
     fn clone(&self) -> Self {
-        Thread(self.0.clone(), self.1.clone())
+        Thread(self.0.clone(), self.1)
     }
 }
 
 impl Thread {
     #[inline]
-    pub fn state(&self, _: &lua::State) -> &lua::State {
-        &self.1
+    pub fn state(&self, _: &lua::State) -> lua::State {
+        lua::State::from_usize(self.1)
+    }
+
+    #[inline]
+    pub(crate) fn lua_state(&self) -> lua::State {
+        lua::State::from_usize(self.1)
     }
 
     pub fn resume<R: FromLuaMulti>(&self, l: &State, args: impl ToLuaMulti) -> lua::Result<R> {
-        Self::resume_impl(&self.1, l, args)?;
+        let thread_state = &self.state(l);
 
-        let thread_state = &self.1;
+        Self::resume_impl(thread_state, l, args)?;
+
         let nresults = ffi::lua_gettop(l.0);
         R::try_from_stack_multi(thread_state, nresults + 1, nresults).map(|(v, _)| v)
     }
@@ -57,7 +58,7 @@ impl Thread {
     }
 
     pub fn status(&self, l: &State) -> ThreadStatus {
-        Self::status_impl(&self.1, l)
+        Self::status_impl(&self.state(l), l)
     }
 
     fn status_impl(thread_state: &lua::State, l: &State) -> ThreadStatus {
@@ -77,8 +78,8 @@ impl Thread {
         let status = self.status(l);
         match status {
             ThreadStatus::Resumable => {
-                ffi::lua_settop(self.1.0, 0);
-                func.push_to_stack(&self.1);
+                ffi::lua_settop(self.state(l).0, 0);
+                func.push_to_stack(&self.state(l));
                 Ok(())
             }
             ThreadStatus::Running => Err(lua::Error::Message("cannot reset running thread".into())),
@@ -94,7 +95,7 @@ impl lua::State {
         let thread_ptr = ffi::new_thread(self.0);
         let thread_state = lua::State(thread_ptr);
         func.push_to_stack(&thread_state);
-        Thread(Value::pop_from_stack(self), thread_state)
+        Thread(Value::pop_from_stack(self), thread_state.as_usize())
     }
 
     pub fn is_thread(&self) -> bool {
@@ -119,7 +120,10 @@ impl FromLua for Thread {
         match ffi::lua_type(state.0, index) {
             ffi::LUA_TTHREAD => {
                 let thread_state = lua::State(ffi::lua_tothread(state.0, index));
-                Ok(Thread(Value::from_stack(state, index), thread_state))
+                Ok(Thread(
+                    Value::from_stack(state, index),
+                    thread_state.as_usize(),
+                ))
             }
             _ => Err(state.type_error(index, "thread")),
         }
