@@ -25,6 +25,7 @@ impl Thread {
         lua::State::from_usize(self.1)
     }
 
+    #[allow(unused)]
     #[inline]
     pub(crate) fn lua_state(&self) -> lua::State {
         lua::State::from_usize(self.1)
