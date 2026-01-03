@@ -28,17 +28,10 @@ inventory::submit! {
         |l| {
             // 😉 ;-)
             let chunk = l.load_buffer(b"
-                local co_yield = coroutine.yield
                 local co_resume = coroutine.resume
-                local timer_Simple = timer.Simple
                 local xpcall = xpcall
                 local debug_traceback = debug.traceback
-                return function(co, done, f, ...)
-                    -- We need to delay because trying to resume immediately causes tokio to panic
-                    timer_Simple(0, function()
-                        return co_resume(co)
-                    end)
-                    co_yield()
+                return function(done, f, ...)
                     return done(xpcall(f, debug_traceback, ...))
                 end
             ", c"async_thread_wrap").expect("failed to load async thread wrap chunk");
@@ -75,50 +68,59 @@ impl Function {
     }
 
     #[cfg(feature = "tokio")]
-    pub async fn call_async<R: FromLuaMulti>(&self, args: impl ToLuaMulti) -> lua::Result<R> {
-        use std::sync::mpsc;
-
-        use tokio::sync::oneshot;
+    pub async fn call_async<R: FromLuaMulti + Send + 'static>(
+        &self,
+        args: impl ToLuaMulti,
+    ) -> lua::Result<R> {
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::Notify;
 
         use crate::lua::State;
 
-        let (tx1, rx1) = oneshot::channel::<()>();
-        let (tx2, rx2) = mpsc::sync_channel::<()>(0);
-        let pair = Mutex::new(Some((tx1, rx2)));
+        struct Shared<R> {
+            result: Mutex<Option<lua::Result<R>>>,
+            notify: Notify,
+        }
 
-        let func = self.clone();
-        let thread = {
+        let shared = Arc::new(Shared {
+            result: Mutex::new(None),
+            notify: Notify::new(),
+        });
+        let notified = shared.notify.notified();
+
+        {
             let Some(l) = lua::lock_async().await else {
                 return Err(lua::Error::StateUnavailable);
             };
+
             let thread = l.create_thread(get_thread_wrap());
             let done = l.create_function({
-                move |_: &State| {
-                    if let Some((tx, rx)) = pair.lock().unwrap().take() {
-                        let _ = tx.send(());
-                        let _ = rx.recv();
-                    }
+                let shared = shared.clone();
+                move |l: &State| {
+                    let nargs = ffi::lua_gettop(l.0);
+                    let res = match bool::try_from_stack(l, 1) {
+                        Ok(true) => R::try_from_stack_multi(l, 2, nargs - 1).map(|(v, _)| v),
+                        Ok(false) => {
+                            let err_msg = lua::String::try_from_stack(l, 2)
+                                .unwrap_or_else(|e| e.to_string().into());
+                            Err(lua::Error::Runtime(err_msg))
+                        }
+                        Err(e) => Err(e),
+                    };
+                    *shared.result.lock().unwrap() = Some(res);
+                    shared.notify.notify_one();
                 }
             });
-            thread.resume::<()>(&l, (&thread, done, func, args))?;
-            thread
-        };
 
-        rx1.await.unwrap();
+            let func = self.clone();
+            thread.resume::<()>(&l, (done, func, args))?;
+        }
 
-        let thread_state = &thread.lua_state();
-        let success = bool::try_from_stack(thread_state, 1)?;
-        let ret = if success {
-            R::try_from_stack_multi(thread_state, 2, ffi::lua_gettop(thread_state.0) - 1)
-                .map(|(v, _)| v)
-        } else {
-            let err_msg: lua::String = FromLua::try_from_stack(thread_state, 2)?;
-            Err(lua::Error::Runtime(err_msg))
-        };
+        if shared.result.lock().unwrap().is_none() {
+            notified.await;
+        }
 
-        tx2.send(()).unwrap();
-
-        ret
+        shared.result.lock().unwrap().take().unwrap()
     }
 }
 
