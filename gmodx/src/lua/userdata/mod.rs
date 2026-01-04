@@ -47,19 +47,22 @@ pub trait UserData {
     fn meta_methods(_: &mut MethodsBuilder) {}
     fn methods(_: &mut MethodsBuilder) {}
 
+    #[must_use]
     fn name() -> &'static str {
         type_name::<Self>()
             .rsplit("::")
             .next()
-            .unwrap_or(type_name::<Self>())
+            .unwrap_or_else(type_name::<Self>)
     }
 
+    #[must_use]
     fn unique_id() -> &'static CStr {
         unique_id::<Self>()
     }
 
     /// By default we lazily initialize the methods table.
     /// Use this function to initialize the methods table before it is used.
+    #[must_use]
     fn init_methods_table(state: &lua::State) -> Table
     where
         Self: Sized,
@@ -84,12 +87,19 @@ impl lua::State {
     // We take `I` because create_userdata_impl is used with RefCell<T> and other wrappers.
     // So we need the actual UserData type separately for underlying methods.
     pub(crate) fn create_userdata_impl<T, I: UserData>(&self, ud: T) -> (*mut c_void, AnyUserData) {
+        extern "C-unwind" fn __gc<T>(state: *mut lua_State) -> i32 {
+            let ud_ptr = ffi::lua_touserdata(state, -1);
+            let ud_ptr = ud_ptr.cast_const();
+            drop_userdata_at::<T>(ud_ptr as usize);
+            0
+        }
+
         // Userdata: 1
         let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<T>());
 
         // SAFETY: We just created the userdata, so it's safe to write to it.
         unsafe {
-            std::ptr::write(ud_ptr as *mut T, ud);
+            std::ptr::write(ud_ptr.cast::<T>(), ud);
         }
 
         {
@@ -108,13 +118,6 @@ impl lua::State {
             for (name, func) in mb.0 {
                 func.push_to_stack(self);
                 ffi::lua_setfield(self.0, -2, name.as_ptr());
-            }
-
-            extern "C-unwind" fn __gc<T>(state: *mut lua_State) -> i32 {
-                let ud_ptr = ffi::lua_touserdata(state, -1);
-                let ud_ptr = ud_ptr as *const c_void;
-                drop_userdata_at::<T>(ud_ptr as usize);
-                0
             }
             ffi::lua_pushcclosure(self.0, Some(__gc::<T>), 0);
             ffi::lua_setfield(self.0, -2, c"__gc".as_ptr());

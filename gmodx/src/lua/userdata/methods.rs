@@ -8,7 +8,7 @@ type Methods = Vec<(&'static CStr, Function)>;
 pub struct MethodsBuilder(pub(crate) Methods);
 
 impl MethodsBuilder {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self(Vec::new())
     }
 

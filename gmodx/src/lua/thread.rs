@@ -15,19 +15,20 @@ pub struct Thread(pub(crate) Value, pub(crate) usize);
 
 impl Clone for Thread {
     fn clone(&self) -> Self {
-        Thread(self.0.clone(), self.1)
+        Self(self.0.clone(), self.1)
     }
 }
 
 impl Thread {
+    #[must_use]
     #[inline]
-    pub fn state(&self, _: &lua::State) -> lua::State {
+    pub const fn state(&self, _: &lua::State) -> lua::State {
         lua::State::from_usize(self.1)
     }
 
     #[allow(unused)]
     #[inline]
-    pub(crate) fn lua_state(&self) -> lua::State {
+    pub(crate) const fn lua_state(&self) -> lua::State {
         lua::State::from_usize(self.1)
     }
 
@@ -48,7 +49,7 @@ impl Thread {
         match Self::status_impl(thread_state, l) {
             ThreadStatus::Resumable | ThreadStatus::Yielded => {}
             _ => return Err(lua::Error::CoroutineUnresumable),
-        };
+        }
 
         let nargs = args.push_to_stack_multi_count(thread_state);
         let ret = ffi::lua_resume(thread_state.0, nargs);
@@ -58,6 +59,7 @@ impl Thread {
         }
     }
 
+    #[must_use]
     pub fn status(&self, l: &State) -> ThreadStatus {
         Self::status_impl(&self.state(l), l)
     }
@@ -92,13 +94,15 @@ impl Thread {
 }
 
 impl lua::State {
+    #[must_use]
     pub fn create_thread(&self, func: Function) -> Thread {
         let thread_ptr = ffi::new_thread(self.0);
-        let thread_state = lua::State(thread_ptr);
+        let thread_state = Self(thread_ptr);
         func.push_to_stack(&thread_state);
         Thread(Value::pop_from_stack(self), thread_state.as_usize())
     }
 
+    #[must_use]
     pub fn is_thread(&self) -> bool {
         get_main_lua_state().0 != self.0
     }
@@ -121,7 +125,7 @@ impl FromLua for Thread {
         match ffi::lua_type(state.0, index) {
             ffi::LUA_TTHREAD => {
                 let thread_state = lua::State(ffi::lua_tothread(state.0, index));
-                Ok(Thread(
+                Ok(Self(
                     Value::from_stack(state, index),
                     thread_state.as_usize(),
                 ))

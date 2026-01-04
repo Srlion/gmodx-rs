@@ -1,12 +1,13 @@
 use std::{
     fmt,
+    mem::ManuallyDrop,
     sync::{
         Mutex,
-        atomic::{AtomicI32, AtomicPtr, Ordering},
+        atomic::{AtomicPtr, Ordering},
     },
 };
 
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashSet};
 
 use crate::{
     lua::{self, ffi},
@@ -14,21 +15,50 @@ use crate::{
     sync::XRc,
 };
 
-static FREE_SLOTS: Mutex<FxHashMap<i32, bool>> = Mutex::new(FxHashMap::with_hasher(FxBuildHasher));
+struct SlotPool {
+    available: Vec<i32>,         // nil'd and ready to reuse
+    pending_nil: FxHashSet<i32>, // dropped, awaiting nil on main thread
+    stack_top: i32,
+}
+
+impl SlotPool {
+    pub const fn new() -> Self {
+        Self {
+            available: Vec::new(),
+            pending_nil: FxHashSet::with_hasher(FxBuildHasher),
+            stack_top: 0,
+        }
+    }
+
+    /// returns (index, is_reused)
+    fn take(&mut self) -> (i32, bool) {
+        self.pending_nil
+            .iter()
+            .next()
+            .copied()
+            .map(|i| {
+                self.pending_nil.remove(&i);
+                (i, true)
+            })
+            .or_else(|| self.available.pop().map(|i| (i, true)))
+            .unwrap_or_else(|| {
+                self.stack_top += 1;
+                (self.stack_top, false)
+            })
+    }
+}
+
+static SLOTS: Mutex<SlotPool> = Mutex::new(SlotPool::new());
 static REF_STATE: AtomicPtr<ffi::lua_State> = AtomicPtr::new(std::ptr::null_mut());
-static REF_STACK_TOP: AtomicI32 = AtomicI32::new(0);
 
 #[derive(Clone)]
 pub struct ValueRef {
     // Same as xrc_index but to have faster access
     pub(crate) index: i32,
-    pub(crate) xrc_index: Option<ValueRefIndex>,
+    /// A reference to a Lua value index in the auxiliary thread.
+    /// It's cheap to clone and can be used to track the number of references to a value.
+    pub(crate) xrc: ManuallyDrop<XRc<i32>>,
 }
-
-/// A reference to a Lua value index in the auxiliary thread.
-/// It's cheap to clone and can be used to track the number of references to a value.
-#[derive(Clone)]
-pub(crate) struct ValueRefIndex(pub(crate) XRc<i32>);
 
 #[inline]
 fn ref_state() -> lua::State {
@@ -37,29 +67,12 @@ fn ref_state() -> lua::State {
     lua::State(ptr)
 }
 
-fn stack_pop() -> i32 {
-    let state = ref_state();
-    let free = {
-        let mut free_slots = FREE_SLOTS.lock().unwrap();
-        free_slots.iter().next().map(|(&v, _)| v).map(|v| {
-            free_slots.remove(&v);
-            v
-        })
-    };
-    if let Some(free) = free {
-        ffi::lua_replace(state.0, free);
-        free
-    } else {
-        REF_STACK_TOP.fetch_add(1, Ordering::AcqRel) + 1
-    }
-}
-
 impl ValueRef {
     #[inline]
     pub(crate) fn new(index: i32) -> Self {
         Self {
             index,
-            xrc_index: Some(ValueRefIndex(XRc::new(index))),
+            xrc: ManuallyDrop::new(XRc::new(index)),
         }
     }
 
@@ -68,7 +81,14 @@ impl ValueRef {
     }
 
     pub(crate) fn pop() -> Self {
-        Self::new(stack_pop())
+        let state = ref_state();
+        let mut slots = SLOTS.lock().unwrap();
+        let (index, reused) = slots.take();
+        if reused {
+            ffi::lua_replace(state.0, index);
+        }
+        drop(slots);
+        Self::new(index)
     }
 
     pub(crate) fn pop_from(from: &lua::State) -> Self {
@@ -84,30 +104,26 @@ impl ValueRef {
 
 impl Drop for ValueRef {
     fn drop(&mut self) {
-        // It's guaranteed that the inner value returns exactly once.
-        // This means in particular that the value is not dropped.
-        if let Some(ValueRefIndex(xrc)) = self.xrc_index.take()
-            && XRc::into_inner(xrc).is_some()
-        {
-            let index = self.index;
-            FREE_SLOTS.lock().unwrap().insert(index, true);
-            // Make sure we only access the ref_thread on the main thread.
-            next_tick(move |_| {
-                let state = ref_state().0;
-                debug_assert!(
-                    ffi::lua_gettop(state) >= index,
-                    "GC finalizer is not allowed in ref_thread"
-                );
-                let mut free_slots = FREE_SLOTS.lock().unwrap();
-                if let Some(&should_nil) = free_slots.get(&index)
-                    && should_nil
-                {
-                    ffi::lua_pushnil(state);
-                    ffi::lua_replace(state, index);
-                    free_slots.insert(index, false);
-                }
-            });
-        }
+        let xrc = unsafe { ManuallyDrop::take(&mut self.xrc) };
+        let Some(index) = XRc::into_inner(xrc) else {
+            return;
+        };
+
+        SLOTS.lock().unwrap().pending_nil.insert(index);
+
+        next_tick(move |_| {
+            let state = ref_state().0;
+            debug_assert!(
+                ffi::lua_gettop(state) >= index,
+                "GC finalizer is not allowed in ref_thread"
+            );
+            let mut slots = SLOTS.lock().unwrap();
+            if slots.pending_nil.remove(&index) {
+                ffi::lua_pushnil(state);
+                ffi::lua_replace(state, index);
+                slots.available.push(index);
+            }
+        });
     }
 }
 
@@ -125,12 +141,11 @@ inventory::submit! {
             let thread = ffi::new_thread(l.0);
             // leak the reference thread so it doesn't get GC'd
             ffi::luaL_ref(l.0, ffi::LUA_REGISTRYINDEX);
-            REF_STACK_TOP.store(0, Ordering::Release);
             REF_STATE.store(thread, Ordering::Release);
         },
         |_| {
             REF_STATE.store(std::ptr::null_mut(), Ordering::Release);
-            FREE_SLOTS.lock().unwrap().clear();
+            *SLOTS.lock().unwrap() = SlotPool::new();
         },
     )
 }

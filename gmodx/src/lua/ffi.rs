@@ -2,6 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(dead_code)]
+#![allow(clippy::inline_always)]
 
 use std::sync::LazyLock;
 
@@ -348,7 +349,7 @@ pub fn lua_len(L: *mut lua_State, idx: i32) {
 pub fn luaL_len(L: *mut lua_State, idx: i32) -> lua_Number {
     let mut isnum = 0;
     lua_len(L, idx);
-    let res = lua_tonumberx(L, -1, &mut isnum);
+    let res = lua_tonumberx(L, -1, &raw mut isnum);
     lua_pop(L, 1);
     if isnum == 0 {
         unsafe { (FFI.luaL_error)(L, c"object length is not an integer".as_ptr()) };

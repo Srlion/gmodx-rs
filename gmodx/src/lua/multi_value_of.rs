@@ -19,9 +19,12 @@ impl<T> DerefMut for MultiValueOf<T> {
 }
 
 impl<T> MultiValueOf<T> {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self(Vec::new())
     }
+
+    #[must_use]
     pub fn into_vec(self) -> Vec<T> {
         self.0
     }

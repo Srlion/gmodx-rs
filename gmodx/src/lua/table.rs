@@ -60,11 +60,13 @@ impl Table {
     }
 
     // the lua state is only used to ensure we are on main thread
+    #[must_use]
     pub fn raw_len(&self, _: &lua::State) -> usize {
         ffi::lua_rawlen(self.0.ref_state().0, self.0.index())
     }
 
     // the lua state is only used to ensure we are on main thread
+    #[must_use]
     pub fn has_metatable(&self, _: &lua::State) -> bool {
         let thread = self.0.ref_state();
         if ffi::lua_getmetatable(thread.0, self.0.index()) == 0 {
@@ -75,6 +77,7 @@ impl Table {
         }
     }
 
+    #[must_use]
     #[inline]
     pub fn ipairs<V: FromLua>(&self, state: &lua::State) -> IPairsIter<V> {
         IPairsIter {
@@ -86,6 +89,7 @@ impl Table {
         }
     }
 
+    #[must_use]
     #[inline]
     pub fn pairs<K: FromLua, V: FromLua>(&self, state: &lua::State) -> PairsIter<K, V> {
         PairsIter {
@@ -97,7 +101,7 @@ impl Table {
         }
     }
 
-    pub fn set_metatable(&self, _: &lua::State, metatable: Option<Table>) {
+    pub fn set_metatable(&self, _: &lua::State, metatable: Option<&Self>) {
         let ref_thread = self.0.ref_state().0;
         if let Some(metatable) = &metatable {
             ffi::lua_pushvalue(ref_thread, metatable.0.index());
@@ -113,13 +117,13 @@ impl Table {
         key: impl ToLua,
         value: impl ToLua,
     ) -> Result<()> {
-        let _sg = state.stack_guard();
-
         unsafe extern "C-unwind" fn safe_settable(state: *mut ffi::lua_State) -> i32 {
             // stack: table, key, value
             ffi::lua_settable(state, -3);
             0
         }
+
+        let _sg = state.stack_guard();
 
         ffi::lua_pushcfunction(state.0, Some(safe_settable));
         self.push_to_stack(state); // push the table
@@ -135,13 +139,13 @@ impl Table {
         state: &lua::State,
         key: impl ToLua,
     ) -> Result<V> {
-        let _sg = state.stack_guard();
-
         unsafe extern "C-unwind" fn safe_gettable(state: *mut ffi::lua_State) -> i32 {
             // stack: table, key
             ffi::lua_gettable(state, -2);
             1
         }
+
+        let _sg = state.stack_guard();
 
         ffi::lua_pushcfunction(state.0, Some(safe_gettable));
         self.push_to_stack(state); // push the table
@@ -153,10 +157,12 @@ impl Table {
 }
 
 impl lua::State {
+    #[must_use]
     pub fn create_table(&self) -> Table {
         self.create_table_with_capacity(0, 0)
     }
 
+    #[must_use]
     pub fn create_table_with_capacity(&self, narr: i32, nrec: i32) -> Table {
         lua::ffi::lua_createtable(self.0, narr, nrec);
         Table(Value::pop_from_stack(self))
@@ -187,7 +193,7 @@ impl ToLua for &Table {
 impl FromLua for Table {
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         match lua::ffi::lua_type(state.0, index) {
-            lua::ffi::LUA_TTABLE => Ok(Table(Value::from_stack(state, index))),
+            lua::ffi::LUA_TTABLE => Ok(Self(Value::from_stack(state, index))),
             _ => Err(state.type_error(index, "table")),
         }
     }

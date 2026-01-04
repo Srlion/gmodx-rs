@@ -35,16 +35,19 @@ impl<T: UserData> Clone for ScopedUserDataRef<T> {
 }
 
 impl<T: UserData> ScopedUserDataRef<T> {
+    #[must_use]
     #[inline]
-    pub fn as_any(&self) -> &AnyUserData {
+    pub const fn as_any(&self) -> &AnyUserData {
         &self.any
     }
 
+    #[must_use]
     #[inline]
     pub fn into_any(self) -> AnyUserData {
         self.any
     }
 
+    #[must_use]
     #[inline]
     pub fn inner(self) -> UserDataStorage<T> {
         self.value
@@ -65,10 +68,12 @@ impl<T: UserData> ScopedUserDataRef<T> {
 
 #[cfg(not(feature = "send"))]
 impl<T: UserData> ScopedUserDataRef<T> {
+    #[must_use]
     pub fn borrow(&self) -> Ref<'_, Option<T>> {
         self.value.borrow()
     }
 
+    #[must_use]
     pub fn borrow_mut(&self) -> RefMut<'_, Option<T>> {
         self.value.borrow_mut()
     }
@@ -167,6 +172,7 @@ impl lua::State {
 }
 
 impl AnyUserData {
+    #[must_use]
     #[inline]
     pub fn scoped_cast_to<T: UserData>(self, l: &lua::State) -> Option<ScopedUserDataRef<T>> {
         if !self.is::<UserDataStorage<T>>(l) {
@@ -174,7 +180,7 @@ impl AnyUserData {
         }
         let ptr = self.ptr();
         // SAFETY: We have checked the type above
-        let storage = unsafe { &*(ptr as *const UserDataStorage<T>) }.clone();
+        let storage = unsafe { &*(ptr.cast::<UserDataStorage<T>>()) }.clone();
         #[cfg(feature = "send")]
         let valid = storage.lock().is_some();
         #[cfg(not(feature = "send"))]

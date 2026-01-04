@@ -1,6 +1,6 @@
 [package]
 name = "gmodx-macros"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
 edition = "2024"
 license = "MIT"

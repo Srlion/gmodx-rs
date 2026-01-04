@@ -47,7 +47,7 @@ fn check_lua_function(input: &mut ItemFn) {
     assert!(input.sig.constness.is_none(), "Cannot be const");
     assert!(
         input.sig.inputs.len() == 1,
-        "There can only be one argument, and it should be a pointer to the Lua state (gmodx::lua::State)"
+        "There can only be one argument (lua state)"
     );
     assert!(input.sig.abi.is_none(), "Do not specify an ABI");
     assert!(input.sig.unsafety.is_none(), "Cannot be unsafe");
@@ -57,7 +57,6 @@ fn check_lua_function(input: &mut ItemFn) {
 pub fn gmod13_open(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
     wrap_compile_error!(tokens, {
         let mut input = syn::parse::<ItemFn>(tokens)?;
-
         check_gmod13_function(&mut input, "gmod13_open");
 
         let inputs = &input.sig.inputs;
@@ -71,6 +70,10 @@ pub fn gmod13_open(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
         let block = input.block;
 
         let output = quote! {
+            #[doc(hidden)]
+            pub const __GMOD13_OPEN_EXISTS: () = ();
+            const _: () = { let _ = __GMOD13_CLOSE_EXISTS; };
+
             #[unsafe(no_mangle)]
             pub extern "C-unwind" fn gmod13_open(#lua_ident: #crate_name::lua::State) -> i32 {
                 {
@@ -110,6 +113,10 @@ pub fn gmod13_close(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
         let block = input.block;
 
         let output = quote! {
+            #[doc(hidden)]
+            pub const __GMOD13_CLOSE_EXISTS: () = ();
+            const _: () = { let _ = __GMOD13_OPEN_EXISTS; };
+
             #[unsafe(no_mangle)]
             pub extern "C-unwind" fn gmod13_close(#lua_ident: #crate_name::lua::State) -> i32 {
                 {
@@ -146,9 +153,7 @@ fn check_gmod13_function(input: &mut ItemFn, expected_name: &str) {
         syn::ReturnType::Type(_, ty) => {
             // Check if it's the unit type ()
             if let syn::Type::Tuple(tuple) = &**ty {
-                if !tuple.elems.is_empty() {
-                    panic!("Function must not return anything",);
-                }
+                assert!(tuple.elems.is_empty(), "Function must not return anything");
             } else {
                 panic!("Function must not return anything",);
             }
@@ -168,13 +173,13 @@ pub fn unique_id(input: TokenStream) -> TokenStream {
             .as_nanos();
 
         let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
-        format!("__GMODX_UNIQUE_ID_{}_{}_{}", version, timestamp, counter)
+        format!("__GMODX_UNIQUE_ID_{version}_{timestamp}_{counter}")
     };
     let input_str = input.to_string();
     let is_c_string = input_str.trim() == "cstr";
     if is_c_string {
-        format!("c\"{}\"", unique_str).parse().unwrap()
+        format!("c\"{unique_str}\"").parse().unwrap()
     } else {
-        format!("\"{}\"", unique_str).parse().unwrap()
+        format!("\"{unique_str}\"").parse().unwrap()
     }
 }

@@ -136,7 +136,7 @@ impl lua::State {
 
     pub(crate) fn create_function_impl(&self, func: Callback) -> Function {
         let callback_ptr =
-            ffi::lua_newuserdata(self.0, mem::size_of::<Callback>()) as *mut Callback;
+            ffi::lua_newuserdata(self.0, mem::size_of::<Callback>()).cast::<Callback>();
 
         debug_assert_eq!(
             (callback_ptr as usize) % mem::align_of::<Callback>(),
@@ -151,7 +151,7 @@ impl lua::State {
         if ffi::luaL_newmetatable(self.0, CLOSURE_GC_METATABLE_NAME.as_ptr()) {
             extern "C-unwind" fn gc_rust_function(state: *mut lua::ffi::lua_State) -> i32 {
                 let l = lua::State(state);
-                let data_ptr = ffi::lua_touserdata(l.0, 1) as *mut Callback;
+                let data_ptr = ffi::lua_touserdata(l.0, 1).cast::<Callback>();
                 if !data_ptr.is_null() {
                     unsafe {
                         // Read the Box out and drop it
@@ -175,18 +175,18 @@ extern "C-unwind" fn rust_closure_callback(state: *mut ffi::lua_State) -> i32 {
     {
         let l = lua::State(state);
         let data_ptr = ffi::lua_touserdata(l.0, ffi::lua_upvalueindex(1)) as *const Callback;
-        if !data_ptr.is_null() {
+        if data_ptr.is_null() {
+            ffi::lua_pushstring(l.0, c"attempt to call a nil value".as_ptr());
+        } else {
             let func = unsafe { &*data_ptr };
             match func(&l) {
                 Ok(v) => return v,
                 Err(err) => {
                     let err_str = err.to_string();
-                    ffi::lua_pushlstring(l.0, err_str.as_ptr() as *const i8, err_str.len());
+                    ffi::lua_pushlstring(l.0, err_str.as_ptr().cast::<i8>(), err_str.len());
                     drop(err_str); // make sure to drop before lua_error
                 }
             }
-        } else {
-            ffi::lua_pushstring(l.0, c"attempt to call a nil value".as_ptr());
         }
     }
     ffi::lua_error(state);
@@ -216,7 +216,7 @@ impl ToLua for &Function {
 impl FromLua for Function {
     fn try_from_stack(state: &lua::State, index: i32) -> lua::Result<Self> {
         match ffi::lua_type(state.0, index) {
-            ffi::LUA_TFUNCTION => Ok(Function(Value::from_stack(state, index))),
+            ffi::LUA_TFUNCTION => Ok(Self(Value::from_stack(state, index))),
             _ => Err(state.type_error(index, "function")),
         }
     }
@@ -233,7 +233,6 @@ where
     E: Display,
 {
     type Value = T;
-    #[inline(always)]
     fn into_callback_result(self) -> Result<T, String> {
         self.map_err(|e| e.to_string())
     }
@@ -244,7 +243,6 @@ where
     T: ToLuaMulti,
 {
     type Value = Self;
-    #[inline(always)]
     fn into_callback_result(self) -> Result<Self, String> {
         Ok(self)
     }

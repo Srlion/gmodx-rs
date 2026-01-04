@@ -52,7 +52,7 @@ impl FromLua for Nil {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         match ffi::lua_type(state.0, index) {
-            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(Nil),
+            ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(Self),
             _ => Err(state.type_error(index, "nil")),
         }
     }
@@ -61,7 +61,7 @@ impl FromLua for Nil {
 impl ToLua for bool {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
-        ffi::lua_pushboolean(state.0, if self { 1 } else { 0 });
+        ffi::lua_pushboolean(state.0, i32::from(self));
     }
 }
 
@@ -87,7 +87,7 @@ impl FromLua for LightUserData {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         match ffi::lua_type(state.0, index) {
-            ffi::LUA_TLIGHTUSERDATA => Ok(LightUserData(ffi::lua_touserdata(state.0, index))),
+            ffi::LUA_TLIGHTUSERDATA => Ok(Self(ffi::lua_touserdata(state.0, index))),
             _ => Err(state.type_error(index, "lightuserdata")),
         }
     }
@@ -96,7 +96,7 @@ impl FromLua for LightUserData {
 impl ToLua for &str {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
-        ffi::lua_pushlstring(state.0, self.as_ptr() as *const i8, self.len());
+        ffi::lua_pushlstring(state.0, self.as_ptr().cast::<i8>(), self.len());
     }
 }
 
@@ -117,7 +117,7 @@ impl ToLua for &String {
 impl ToLua for &BStr {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
-        ffi::lua_pushlstring(state.0, self.as_ptr() as *const i8, self.len());
+        ffi::lua_pushlstring(state.0, self.as_ptr().cast::<i8>(), self.len());
     }
 }
 
@@ -149,11 +149,11 @@ impl FromLua for BString {
                 let mut len = 0;
                 let ptr = ffi::lua_tolstring(state.0, index, &mut len);
                 if ptr.is_null() {
-                    return Ok(BString::default()); // what happened wtf?
+                    return Ok(Self::default()); // what happened wtf?
                 }
 
-                let bytes = unsafe { std::slice::from_raw_parts(ptr as *const u8, len) };
-                Ok(BString::from(bytes))
+                let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), len) };
+                Ok(Self::from(bytes))
             }
             _ => Err(state.type_error(index, "string")),
         }
@@ -164,21 +164,21 @@ impl ToLua for &std::ffi::CStr {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
         let bytes = self.to_bytes();
-        ffi::lua_pushlstring(state.0, bytes.as_ptr() as *const i8, bytes.len());
+        ffi::lua_pushlstring(state.0, bytes.as_ptr().cast::<i8>(), bytes.len());
     }
 }
 
 impl ToLua for CString {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
-        self.as_ref().push_to_stack(state)
+        self.as_ref().push_to_stack(state);
     }
 }
 
 impl ToLua for &CString {
     #[inline]
     fn push_to_stack(self, state: &lua::State) {
-        self.as_ref().push_to_stack(state)
+        self.as_ref().push_to_stack(state);
     }
 }
 
@@ -219,7 +219,7 @@ impl<T: FromLua> FromLua for Vec<T> {
     fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
         let table = Table::try_from_stack(state, index)?;
         let len = table.raw_len(state);
-        let mut vec = Vec::with_capacity(len);
+        let mut vec = Self::with_capacity(len);
         for i in 1..=len {
             let value = table.raw_get(state, i)?;
             vec.push(value);
@@ -258,7 +258,7 @@ impl<K: FromLua + Eq + std::hash::Hash, V: FromLua> FromLua for HashMap<K, V> {
             return Err(l.type_error(index, "table"));
         }
         let _sg = l.stack_guard(); // to pop any extra values we push
-        let mut map = HashMap::new();
+        let mut map = Self::new();
         let abs_idx = ffi::lua_absindex(l.0, index);
         // push nil onto the stack to indicate that we want to start iterating
         ffi::lua_pushnil(l.0);
@@ -286,6 +286,7 @@ macro_rules! impl_num_from_lua {
         impl FromLua for $t {
             #[inline]
             fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+                #[allow(clippy::cast_possible_truncation)]
                 Ok(from_lua_f64(state, index)? as $t)
             }
         }
@@ -298,6 +299,7 @@ macro_rules! impl_big_from_lua {
             #[inline]
             fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
                 match ffi::lua_type(state.0, index) {
+                    #[allow(clippy::cast_possible_truncation)]
                     ffi::LUA_TNUMBER => Ok(ffi::lua_tonumber(state.0, index) as $t),
                     ffi::LUA_TSTRING => BString::try_from_stack(state, index)?
                         .to_str()
@@ -314,6 +316,7 @@ macro_rules! impl_big_from_lua {
             #[inline]
             fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
                 match ffi::lua_type(state.0, index) {
+                    #[allow(clippy::cast_possible_truncation)]
                     ffi::LUA_TNUMBER => Ok(ffi::lua_tonumber(state.0, index) as $t),
                     ffi::LUA_TSTRING => {
                         let s = BString::try_from_stack(state, index)?;
@@ -336,6 +339,7 @@ macro_rules! impl_num_to_lua {
         impl ToLua for $t {
             #[inline]
             fn push_to_stack(self, state: &lua::State) {
+                #[allow(clippy::cast_possible_truncation)]
                 ffi::lua_pushnumber(state.0, self as f64);
             }
         }
@@ -348,6 +352,7 @@ macro_rules! impl_big_to_lua {
             #[inline]
             fn push_to_stack(self, state: &lua::State) {
                 if (-9007199254740991..=9007199254740991).contains(&self) {
+                    #[allow(clippy::cast_possible_truncation)]
                     f64::push_to_stack(self as f64, state) // fits in f64
                 } else {
                     self.to_string().push_to_stack(state) // too big, use string
@@ -360,6 +365,7 @@ macro_rules! impl_big_to_lua {
             #[inline]
             fn push_to_stack(self, state: &lua::State) {
                 if self <= 9007199254740991 {
+                    #[allow(clippy::cast_possible_truncation)]
                     f64::push_to_stack(self as f64, state) // fits in f64
                 } else {
                     self.to_string().push_to_stack(state) // too big, use string

@@ -10,8 +10,7 @@ use crate::lua::{self, FromLua, Function, Table, ToLua, Value, ffi};
 pub struct State(pub(crate) *mut lua::ffi::lua_State);
 
 impl State {
-    #[inline(always)]
-    pub(crate) fn clone(&self) -> Self {
+    pub(crate) const fn clone(&self) -> Self {
         Self(self.0)
     }
 
@@ -21,26 +20,23 @@ impl State {
         self.0 as usize
     }
 
-    #[allow(unused)]
-    #[inline(always)]
-    pub(crate) fn from_usize(u: usize) -> Self {
+    pub(crate) const fn from_usize(u: usize) -> Self {
         Self(u as *mut lua::ffi::lua_State)
     }
 
+    #[must_use]
     #[inline]
     pub fn type_of(&self, index: i32) -> i32 {
         ffi::lua_type(self.0, index)
     }
 
+    #[must_use]
     pub fn type_name(&self, idx: i32) -> String {
         let tp = self.type_of(idx);
         let tp_str = {
             let c_str = ffi::lua_typename(self.0, tp);
             if c_str.is_null() {
-                eprintln!(
-                    "[gmodx] Warning: lua_typename returned null for type {}",
-                    tp
-                );
+                eprintln!("[gmodx] Warning: lua_typename returned null for type {tp}");
                 return "<null>".into();
             }
             unsafe { std::ffi::CStr::from_ptr(c_str) }
@@ -48,6 +44,7 @@ impl State {
         tp_str.to_string_lossy().into_owned()
     }
 
+    #[must_use]
     pub fn globals(&self) -> Table {
         ffi::lua_pushvalue(self.0, ffi::LUA_GLOBALSINDEX);
         Table(Value::pop_from_stack(self))
@@ -63,6 +60,7 @@ impl State {
         self.globals().get(self, key)
     }
 
+    #[must_use]
     pub fn caller_source_path(&self) -> Option<PathBuf> {
         let dbg_info = self.debug_getinfo_at(1, c"S")?;
         let source = dbg_info.source?;
@@ -81,7 +79,7 @@ impl State {
     pub fn load_buffer(&self, buff: &[u8], name: &CStr) -> lua::Result<Function> {
         let chunk = ffi::luaL_loadbuffer(
             self.0,
-            buff.as_ptr() as *const i8,
+            buff.as_ptr().cast::<i8>(),
             buff.len(),
             name.as_ptr(),
         );
@@ -96,7 +94,7 @@ impl State {
         let _sg = self.stack_guard(); // to pop any extra values we push
         let top = ffi::lua_gettop(self.0);
         println!("\n=== STACK DUMP ===");
-        println!("Stack size: {}", top);
+        println!("Stack size: {top}");
         for i in 1..=top {
             let lua_type_name = self.type_name(i);
             match lua_type_name.as_ref() {
@@ -118,7 +116,7 @@ impl State {
                     ffi::lua_pop(self.0, 1);
                     n
                 }),
-                _ => println!("{}. {}", i, lua_type_name),
+                _ => println!("{i}. {lua_type_name}"),
             }
         }
         println!();

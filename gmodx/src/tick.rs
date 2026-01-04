@@ -20,7 +20,8 @@ static TICK_RATE: AtomicU64 = AtomicU64::new(DEFAULT_TICK_RATE.to_bits());
 #[inline]
 fn budget() -> Duration {
     let rate = f64::from_bits(TICK_RATE.load(Ordering::Relaxed));
-    Duration::from_micros(((1_000_000.0 / rate) * BUDGET_FRACTION) as u64)
+    let micros = ((1_000_000.0 / rate) * BUDGET_FRACTION).max(0.0) as u64;
+    Duration::from_micros(micros)
 }
 
 #[inline(never)]

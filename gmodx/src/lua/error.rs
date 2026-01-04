@@ -51,23 +51,21 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::MemoryAllocation(s) => write!(f, "{}", s),
-            Error::Syntax(s) => write!(f, "{}", s),
-            Error::Runtime(s) => write!(f, "{}", s),
-            Error::Message(msg) => write!(f, "{}", msg),
-            Error::Unknown { code, message } => {
-                write!(f, "Unknown Lua error (code {}): {}", code, message)
+            Self::MemoryAllocation(s) | Self::Syntax(s) | Self::Runtime(s) => write!(f, "{s}"),
+            Self::Message(s) => write!(f, "{s}"),
+            Self::Unknown { code, message } => {
+                write!(f, "Unknown Lua error (code {code}): {message}")
             }
-            Error::Type { expected, got } => {
-                write!(f, "expected {}, got {}", expected, got)
+            Self::Type { expected, got } => {
+                write!(f, "expected {expected}, got {got}")
             }
-            Error::BadArgument {
+            Self::BadArgument {
                 arg_num,
                 function,
                 cause,
-            } => write!(f, "bad argument #{} to '{}' ({})", arg_num, function, cause),
-            Error::CoroutineUnresumable => write!(f, "coroutine is unresumable"),
-            Error::StateUnavailable => write!(f, "Lua state is closed"),
+            } => write!(f, "bad argument #{arg_num} to '{function}' ({cause})"),
+            Self::CoroutineUnresumable => write!(f, "coroutine is unresumable"),
+            Self::StateUnavailable => write!(f, "Lua state is closed"),
         }
     }
 }
@@ -76,7 +74,7 @@ impl std::error::Error for Error {}
 
 impl lua::State {
     pub fn error_no_halt(&self, err: &str) {
-        let formatted = format!("[ERROR] {}\n", err);
+        let formatted = format!("[ERROR] {err}\n");
         self.call_error_handler("ErrorNoHalt", &formatted);
     }
 
@@ -87,7 +85,7 @@ impl lua::State {
     fn call_error_handler(&self, func_name: &str, message: &str) {
         self.get_global::<Function>(func_name)
             .and_then(|func| func.call::<()>(self, message))
-            .unwrap_or_else(|_| eprint!("{}", message));
+            .unwrap_or_else(|_| eprint!("{message}"));
     }
 
     pub(crate) fn pop_error(&self, err_code: i32) -> Error {

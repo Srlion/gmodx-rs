@@ -33,18 +33,19 @@ pub enum ValueKind {
 }
 
 impl ValueKind {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ValueKind::Nil => "nil",
-            ValueKind::Bool => "boolean",
-            ValueKind::LightUserData => "lightuserdata",
-            ValueKind::Number => "number",
-            ValueKind::String => "string",
-            ValueKind::Table => "table",
-            ValueKind::Function => "function",
-            ValueKind::UserData => "userdata",
-            ValueKind::Thread => "thread",
-            ValueKind::Unknown => "unknown",
+            Self::Nil => "nil",
+            Self::Bool => "boolean",
+            Self::LightUserData => "lightuserdata",
+            Self::Number => "number",
+            Self::String => "string",
+            Self::Table => "table",
+            Self::Function => "function",
+            Self::UserData => "userdata",
+            Self::Thread => "thread",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -56,11 +57,13 @@ impl fmt::Display for ValueKind {
 }
 
 impl Value {
+    #[must_use]
     pub fn from_stack(state: &lua::State, index: i32) -> Self {
         ffi::lua_pushvalue(state.0, index);
         Self::pop_from_stack(state)
     }
 
+    #[must_use]
     pub fn pop_from_stack(state: &lua::State) -> Self {
         let type_id = ffi::lua_type(state.0, -1);
         Self {
@@ -69,11 +72,13 @@ impl Value {
         }
     }
 
-    pub fn type_id(&self) -> i32 {
+    #[must_use]
+    pub const fn type_id(&self) -> i32 {
         self.type_id
     }
 
-    pub fn type_kind(&self) -> ValueKind {
+    #[must_use]
+    pub const fn type_kind(&self) -> ValueKind {
         match self.type_id {
             ffi::LUA_TNIL | ffi::LUA_TNONE => ValueKind::Nil,
             ffi::LUA_TBOOLEAN => ValueKind::Bool,
@@ -88,7 +93,8 @@ impl Value {
         }
     }
 
-    pub fn type_name(&self) -> &'static str {
+    #[must_use]
+    pub const fn type_name(&self) -> &'static str {
         self.type_kind().as_str()
     }
 
@@ -100,7 +106,7 @@ impl Value {
         self.inner.push(state);
     }
 
-    pub(crate) fn index(&self) -> i32 {
+    pub(crate) const fn index(&self) -> i32 {
         self.inner.index
     }
 
@@ -117,10 +123,10 @@ impl fmt::Display for Value {
 
 impl ToLua for Value {
     fn push_to_stack(self, state: &lua::State) {
-        Value::push_to_stack(&self, state);
+        Self::push_to_stack(&self, state);
     }
 
-    fn to_value(self, _: &lua::State) -> Value {
+    fn to_value(self, _: &lua::State) -> Self {
         self
     }
 }
@@ -164,21 +170,24 @@ impl DerefMut for MultiValue {
 
 impl MultiValue {
     /// Creates an empty `MultiValue` containing no values.
+    #[must_use]
     #[inline]
-    pub const fn new() -> MultiValue {
-        MultiValue(VecDeque::new())
+    pub const fn new() -> Self {
+        Self(VecDeque::new())
     }
 
     /// Creates an empty `MultiValue` container with space for at least `capacity` elements.
-    pub fn with_capacity(capacity: usize) -> MultiValue {
-        MultiValue(VecDeque::with_capacity(capacity))
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(VecDeque::with_capacity(capacity))
     }
 
     /// Creates a `MultiValue` container from vector of values.
     ///
     /// This method works in *O*(1) time and does not allocate any additional memory.
+    #[must_use]
     #[inline]
-    pub fn from_vec(vec: Vec<Value>) -> MultiValue {
+    pub fn from_vec(vec: Vec<Value>) -> Self {
         vec.into()
     }
 
@@ -186,6 +195,7 @@ impl MultiValue {
     ///
     /// This method needs *O*(*n*) data movement if the circular buffer doesn't happen to be at the
     /// beginning of the allocation.
+    #[must_use]
     #[inline]
     pub fn into_vec(self) -> Vec<Value> {
         self.into()
@@ -196,20 +206,20 @@ impl MultiValue {
     pub(crate) fn from_lua_iter<T: ToLua>(
         state: &lua::State,
         iter: impl IntoIterator<Item = T>,
-    ) -> Result<Self> {
+    ) -> Self {
         let iter = iter.into_iter();
-        let mut multi_value = MultiValue::with_capacity(iter.size_hint().0);
+        let mut multi_value = Self::with_capacity(iter.size_hint().0);
         for value in iter {
             multi_value.push_back(value.to_value(state));
         }
-        Ok(multi_value)
+        multi_value
     }
 }
 
 impl From<Vec<Value>> for MultiValue {
     #[inline]
     fn from(value: Vec<Value>) -> Self {
-        MultiValue(value.into())
+        Self(value.into())
     }
 }
 
@@ -223,7 +233,7 @@ impl From<MultiValue> for Vec<Value> {
 impl FromIterator<Value> for MultiValue {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Value>>(iter: I) -> Self {
-        let mut multi_value = MultiValue::new();
+        let mut multi_value = Self::new();
         multi_value.extend(iter);
         multi_value
     }
@@ -263,7 +273,7 @@ impl FromLuaMulti for MultiValue {
         start_index: i32,
         count: i32,
     ) -> Result<(Self, i32)> {
-        let mut multi_value = MultiValue::with_capacity(count as usize);
+        let mut multi_value = Self::with_capacity(count as usize);
         for i in 0..count {
             multi_value.push_back(Value::from_stack(state, start_index + i));
         }

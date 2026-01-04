@@ -47,7 +47,7 @@ pub use userdata::{
 mod debug;
 
 pub(crate) mod private {
-    use super::*;
+    use super::{AnyUserData, Error, State, Table};
 
     pub trait Sealed {}
 

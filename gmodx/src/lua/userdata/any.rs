@@ -33,7 +33,7 @@ impl AnyUserData {
         type_name: &str,
     ) -> Result<Self> {
         if ffi::lua_type(state.0, index) == ffi::LUA_TUSERDATA {
-            Ok(AnyUserData(Value::from_stack(state, index)))
+            Ok(Self(Value::from_stack(state, index)))
         } else {
             Err(state.type_error(index, type_name))
         }
@@ -95,6 +95,6 @@ impl ToLua for &AnyUserData {
 impl FromLua for AnyUserData {
     #[inline]
     fn try_from_stack(state: &lua::State, index: i32) -> Result<AnyUserData> {
-        AnyUserData::from_stack_with_type(state, index, "userdata")
+        Self::from_stack_with_type(state, index, "userdata")
     }
 }

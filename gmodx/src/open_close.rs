@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     collections::HashSet,
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
@@ -8,11 +9,12 @@ use crate::lua::{self, ffi};
 static MAIN_LUA_STATE: AtomicPtr<lua::ffi::lua_State> = AtomicPtr::new(std::ptr::null_mut());
 
 thread_local! {
-    static IS_MAIN_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static IS_MAIN_THREAD: Cell<bool> = const { Cell::new(false) };
 }
 
+#[must_use]
 pub fn is_main_thread() -> bool {
-    IS_MAIN_THREAD.with(|cell| cell.get())
+    IS_MAIN_THREAD.with(Cell::get)
 }
 
 static GMOD_CLOSED: AtomicBool = AtomicBool::new(true);
@@ -23,6 +25,7 @@ pub fn is_closed() -> bool {
 }
 
 #[inline]
+#[must_use]
 pub fn is_open() -> bool {
     !is_closed()
 }
@@ -55,9 +58,11 @@ fn get_sorted_modules() -> Vec<&'static OpenClose> {
 
     let mut seen_ids = HashSet::new();
     for module in &modules {
-        if !seen_ids.insert(module.id) {
-            panic!("Duplicate OpenClose ID: {}", module.id);
-        }
+        assert!(
+            seen_ids.insert(module.id),
+            "Duplicate OpenClose ID: {}",
+            module.id
+        );
     }
 
     // Sort by priority (lower priority loads first)

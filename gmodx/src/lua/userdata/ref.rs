@@ -29,14 +29,16 @@ impl<T: UserData> UserDataRef<T> {
     const fn downcast(&self) -> &RefCell<T> {
         // SAFETY: The pointer is valid as long as the inner value is alive.
         // SAFETY: We type check before initializing UserDataRef.
-        unsafe { &*(self.ptr as *const RefCell<T>) }
+        unsafe { &*(self.ptr.cast::<RefCell<T>>()) }
     }
 
+    #[must_use]
     #[inline]
     pub fn borrow(&self) -> Ref<'_, T> {
         self.downcast().borrow()
     }
 
+    #[must_use]
     #[inline]
     pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.downcast().borrow_mut()
@@ -56,11 +58,13 @@ impl<T: UserData> UserDataRef<T> {
         })
     }
 
+    #[must_use]
     #[inline]
-    pub fn as_any(&self) -> &AnyUserData {
+    pub const fn as_any(&self) -> &AnyUserData {
         &self.any
     }
 
+    #[must_use]
     #[inline]
     pub fn into_any(self) -> AnyUserData {
         self.any
@@ -104,6 +108,7 @@ impl<T: UserData> From<UserDataRef<T>> for AnyUserData {
 }
 
 impl AnyUserData {
+    #[must_use]
     #[inline]
     pub fn cast_to<T: UserData>(self, state: &lua::State) -> Option<UserDataRef<T>> {
         if !self.is::<RefCell<T>>(state) {

@@ -10,8 +10,8 @@ impl StackGuard {
     // stack size and drop any extra elements. If the stack size at the end is *smaller* than at
     // the beginning, this is considered a fatal logic error and will result in a panic.
     #[inline]
-    pub fn new(state: *mut ffi::lua_State) -> StackGuard {
-        StackGuard {
+    pub fn new(state: *mut ffi::lua_State) -> Self {
+        Self {
             state,
             top: ffi::lua_gettop(state),
         }
@@ -19,22 +19,24 @@ impl StackGuard {
 
     // Same as `new()`, but allows specifying the expected stack size at the end of the scope.
     #[inline]
-    pub fn with_top(state: *mut ffi::lua_State, top: i32) -> StackGuard {
-        StackGuard { state, top }
+    pub const fn with_top(state: *mut ffi::lua_State, top: i32) -> Self {
+        Self { state, top }
     }
 
     #[inline]
-    pub fn keep(&mut self, n: i32) {
+    pub const fn keep(&mut self, n: i32) {
         self.top += n;
     }
 
     #[inline]
-    pub fn top(&self) -> i32 {
+    #[must_use]
+    pub const fn top(&self) -> i32 {
         self.top
     }
 }
 
 impl lua::State {
+    #[must_use]
     pub fn stack_guard(&self) -> StackGuard {
         StackGuard::new(self.0)
     }
