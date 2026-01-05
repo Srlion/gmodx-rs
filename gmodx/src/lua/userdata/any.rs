@@ -1,8 +1,7 @@
 use std::ffi::c_void;
 
 use crate::lua::{
-    self, FromLua, FromLuaMulti, Function, ObjectLike, Result, Table, ToLua, ToLuaMulti, Value,
-    ffi, userdata::TYPES,
+    self, FromLua, FromLuaMulti, Function, ObjectLike, Result, Table, ToLua, ToLuaMulti, Value, ffi,
 };
 
 #[derive(Clone, Debug)]
@@ -19,11 +18,7 @@ impl AnyUserData {
 
     #[inline]
     pub fn is<T>(&self, _: &lua::State) -> bool {
-        TYPES
-            .lock()
-            .unwrap()
-            .get(&(self.ptr() as usize))
-            .is_some_and(|id| id == &typeid::of::<T>())
+        super::is_type::<T>(self.ptr() as usize)
     }
 
     #[inline]

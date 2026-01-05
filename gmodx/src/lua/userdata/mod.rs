@@ -17,17 +17,83 @@ mod scoped;
 pub use scoped::{ScopedUserData, ScopedUserDataRef};
 
 use crate::lua::{self, ffi::lua_State};
-use crate::lua::{Table, ToLua, Value, ffi};
+use crate::lua::{Function, Table, ToLua, Value, ffi};
 
-pub(crate) static TYPES: Mutex<FxHashMap<usize, TypeId>> =
+static STORE: Mutex<Option<(Table, Function, Function)>> = Mutex::new(None);
+
+fn get_ud_store() -> (Table, Function, Function) {
+    STORE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .cloned()
+        .expect("userdata store not initialized")
+}
+
+inventory::submit! {
+    crate::open_close::new(
+        0,
+        "userdata_store",
+        |l| {
+            // 😉 ;-)
+            let chunk = l.load_buffer(b"
+                local getmetatable = getmetatable
+                local STORE = setmetatable({}, { __mode = 'k' })
+                local function __index(self, k)
+                    local store = STORE[self]
+                    if store then
+                        local v = store[k]
+                        if v ~= nil then
+                            return v
+                        end
+                    end
+                    return getmetatable(self)[k]
+                end
+                local function __newindex(self, k, v)
+                    local store = STORE[self]
+                    if not store then
+                        STORE[self] = {
+                            [k] = v
+                        }
+                        return
+                    end
+                    store[k] = v
+                end
+                return STORE, __index, __newindex
+            ", c"ud_store").expect("failed to load userdata store chunk");
+            let (store, __index, __newindex) = chunk.call::<(Table, Function, Function)>(l, ()).expect("failed to get userdata store");
+            *STORE.lock().unwrap() = Some((store, __index, __newindex));
+        },
+        |_| {
+            *STORE.lock().unwrap() = None;
+        },
+    )
+}
+
+pub static TYPES: Mutex<FxHashMap<usize, (TypeId, fn(usize))>> =
     Mutex::new(FxHashMap::with_hasher(FxBuildHasher));
 
-pub(crate) fn drop_userdata_at<T>(ptr: usize) {
-    let type_id = TYPES.lock().unwrap().remove(&ptr);
-    if type_id.is_some() {
-        unsafe {
-            std::ptr::drop_in_place(ptr as *mut T);
-        }
+fn register_userdata<T>(ptr: usize) {
+    fn drop_fn<T>(ptr: usize) {
+        unsafe { std::ptr::drop_in_place(ptr as *mut T) }
+    }
+    TYPES
+        .lock()
+        .unwrap()
+        .insert(ptr, (typeid::of::<T>(), drop_fn::<T>));
+}
+
+pub(crate) fn is_type<T>(ptr: usize) -> bool {
+    TYPES
+        .lock()
+        .unwrap()
+        .get(&ptr)
+        .is_some_and(|(id, _)| id == &typeid::of::<T>())
+}
+
+pub(crate) fn drop_userdata_at(ptr: usize) {
+    if let Some((_, drop_fn)) = TYPES.lock().unwrap().remove(&ptr) {
+        drop_fn(ptr)
     }
 }
 
@@ -35,10 +101,9 @@ fn unique_id<T: ?Sized>() -> &'static CStr {
     static IDS: LazyLock<Mutex<FxHashMap<TypeId, &'static CStr>>> =
         LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
-    let type_id = typeid::of::<T>();
-    IDS.lock().unwrap().entry(type_id).or_insert_with(|| {
-        let cstring =
-            CString::new(format!("{}_{:?}", gmodx_macros::unique_id!(), type_id)).unwrap();
+    let id = typeid::of::<T>();
+    IDS.lock().unwrap().entry(id).or_insert_with(|| {
+        let cstring = CString::new(format!("{}_{:?}", gmodx_macros::unique_id!(), id)).unwrap();
         Box::leak(cstring.into_boxed_c_str())
     })
 }
@@ -63,37 +128,68 @@ pub trait UserData {
     /// By default we lazily initialize the methods table.
     /// Use this function to initialize the methods table before it is used.
     #[must_use]
-    fn init_methods_table(state: &lua::State) -> Table
+    fn init_methods_table(l: &lua::State) -> Table
     where
         Self: Sized,
     {
-        push_methods_table::<Self>(state);
-        Table(Value::pop_from_stack(state))
+        push_methods_table::<Self>(l);
+        Table(Value::pop_from_stack(l))
     }
 }
 
-fn push_methods_table<T: UserData>(state: &lua::State) {
-    if ffi::luaL_newmetatable(state.0, unique_id::<T>().as_ptr()) {
-        let mut mb = MethodsBuilder::new();
-        T::methods(&mut mb);
-        for (name, func) in mb.0 {
-            func.push_to_stack(state);
-            ffi::lua_setfield(state.0, -2, name.as_ptr());
-        }
+fn push_methods_table<T: UserData>(l: &lua::State) {
+    extern "C-unwind" fn __gc(l: *mut lua_State) -> i32 {
+        let ud_ptr = ffi::lua_touserdata(l, 1) as usize;
+        drop_userdata_at(ud_ptr);
+        0
     }
+
+    if !ffi::luaL_newmetatable(l.0, unique_id::<T>().as_ptr()) {
+        return;
+    }
+
+    let mut mb = MethodsBuilder::new();
+    T::methods(&mut mb);
+    T::meta_methods(&mut mb);
+
+    let mut has_tostring = false;
+    for (name, func) in mb.0 {
+        assert!(
+            name != c"__gc",
+            "{}: use Drop instead of __gc",
+            type_name::<T>()
+        );
+        assert!(
+            name != c"__index" && name != c"__newindex",
+            "{}: __index/__newindex reserved",
+            type_name::<T>()
+        );
+        has_tostring |= name == c"__tostring";
+
+        func.push_to_stack(l);
+        ffi::lua_setfield(l.0, -2, name.as_ptr());
+    }
+
+    if !has_tostring {
+        l.create_function(|_: &_| T::name()).push_to_stack(l);
+        ffi::lua_setfield(l.0, -2, c"__tostring".as_ptr());
+    }
+
+    let (_, __index, __newindex) = get_ud_store();
+    __index.push_to_stack(l);
+    ffi::lua_setfield(l.0, -2, c"__index".as_ptr());
+
+    __newindex.push_to_stack(l);
+    ffi::lua_setfield(l.0, -2, c"__newindex".as_ptr());
+
+    ffi::lua_pushcfunction(l.0, Some(__gc));
+    ffi::lua_setfield(l.0, -2, c"__gc".as_ptr());
 }
 
 impl lua::State {
     // We take `I` because create_userdata_impl is used with RefCell<T> and other wrappers.
     // So we need the actual UserData type separately for underlying methods.
     pub(crate) fn create_userdata_impl<T, I: UserData>(&self, ud: T) -> (*mut c_void, AnyUserData) {
-        extern "C-unwind" fn __gc<T>(state: *mut lua_State) -> i32 {
-            let ud_ptr = ffi::lua_touserdata(state, -1);
-            let ud_ptr = ud_ptr.cast_const();
-            drop_userdata_at::<T>(ud_ptr as usize);
-            0
-        }
-
         // Userdata: 1
         let ud_ptr = ffi::lua_newuserdata(self.0, std::mem::size_of::<T>());
 
@@ -102,50 +198,9 @@ impl lua::State {
             std::ptr::write(ud_ptr.cast::<T>(), ud);
         }
 
-        {
-            TYPES
-                .lock()
-                .unwrap()
-                .insert(ud_ptr as usize, typeid::of::<T>());
-        }
+        register_userdata::<T>(ud_ptr as usize);
 
-        // UserData metatable: 2
-        let mut mb = MethodsBuilder::new();
-        I::meta_methods(&mut mb);
-
-        ffi::lua_createtable(self.0, 0, mb.0.len() as i32);
-        {
-            for (name, func) in mb.0 {
-                func.push_to_stack(self);
-                ffi::lua_setfield(self.0, -2, name.as_ptr());
-            }
-            ffi::lua_pushcclosure(self.0, Some(__gc::<T>), 0);
-            ffi::lua_setfield(self.0, -2, c"__gc".as_ptr());
-        }
-
-        // Store table: 3
-        ffi::lua_createtable(self.0, 0, 0);
-
-        // Store's metatable: 4
-        ffi::lua_createtable(self.0, 0, 1);
-
-        // Methods table: 5
         push_methods_table::<I>(self);
-
-        // Set methods table as __index of store's metatable
-        ffi::lua_setfield(self.0, -2, c"__index".as_ptr()); // pops methods table
-
-        // Set store's metatable
-        ffi::lua_setmetatable(self.0, -2); // pops store's metatable
-
-        // Push store to have it as __index
-        ffi::lua_pushvalue(self.0, -1);
-        ffi::lua_setfield(self.0, -3, c"__index".as_ptr()); // sets on ud_meta
-
-        // Set store as __newindex
-        ffi::lua_setfield(self.0, -2, c"__newindex".as_ptr()); // pops store
-
-        // Set userdata's metatable
         ffi::lua_setmetatable(self.0, -2);
 
         (ud_ptr, AnyUserData(Value::pop_from_stack(self)))
@@ -153,7 +208,7 @@ impl lua::State {
 }
 
 impl<T: UserData + 'static> ToLua for T {
-    fn push_to_stack(self, state: &lua::State) {
-        state.create_userdata(self).push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        l.create_userdata(self).push_to_stack(l);
     }
 }

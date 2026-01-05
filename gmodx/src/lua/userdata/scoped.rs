@@ -142,7 +142,7 @@ impl<T: UserData> ToLua for &ScopedUserData<T> {
 
 impl<T: UserData> Drop for ScopedUserData<T> {
     fn drop(&mut self) {
-        super::drop_userdata_at::<T>(self.0.ptr);
+        super::drop_userdata_at(self.0.ptr);
         #[cfg(feature = "send")]
         let _ = self.0.value.lock().take();
         #[cfg(not(feature = "send"))]
