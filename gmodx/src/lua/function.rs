@@ -169,6 +169,51 @@ impl lua::State {
 
         Function(Value::pop_from_stack(self))
     }
+
+    fn arg_error(&self, mut narg: i32, err: lua::Error) -> lua::Error {
+        let mut fname = "?".to_string();
+        let mut namewhat: Option<&str> = None;
+        let mut location = String::new();
+
+        // Level 0 for function name
+        if let Some(ar) = self.debug_getinfo_at(0, c"n") {
+            if let Some(name) = &ar.name {
+                fname = name.to_string();
+            }
+            if let Some(nw) = &ar.namewhat {
+                if nw == "method" {
+                    namewhat = Some("method");
+                }
+            }
+        }
+
+        // Level 1 for source/line (the Lua caller)
+        if let Some(ar) = self.debug_getinfo_at(1, c"Sl") {
+            let line = ar.currentline;
+            if line > 0 {
+                location = format!("{}:{}: ", ar.short_src, line);
+            }
+        }
+
+        if narg < 0 && narg > ffi::LUA_REGISTRYINDEX {
+            narg = ffi::lua_gettop(self.0) + narg + 1;
+        }
+
+        if let Some("method") = namewhat {
+            if narg == 1 {
+                return lua::Error::Message(format!(
+                    "{}bad self parameter in method '{}' ({})",
+                    location, fname, err
+                ));
+            }
+            narg -= 1;
+        }
+
+        lua::Error::Message(format!(
+            "{}bad argument #{} to '{}' ({})",
+            location, narg, fname, err
+        ))
+    }
 }
 
 extern "C-unwind" fn rust_closure_callback(state: *mut ffi::lua_State) -> i32 {
@@ -278,7 +323,8 @@ macro_rules! impl_into_lua_function {
                     let mut index = 1;
                     let mut remaining = nargs;
                     $(
-                        let ($name, consumed) = $name::try_from_stack_multi(state, index, remaining)?;
+                        let ($name, consumed) = $name::try_from_stack_multi(state, index, remaining)
+                            .map_err(|e| state.arg_error(index, e))?;
                         index += consumed;
                         remaining -= consumed;
                     )*
@@ -312,7 +358,8 @@ macro_rules! impl_into_lua_function {
                         let mut index = 1;
                         let mut remaining = nargs;
                         $(
-                            let ($name, consumed) = $name::try_from_stack_multi(thread_state, index, remaining)?;
+                            let ($name, consumed) = $name::try_from_stack_multi(thread_state, index, remaining)
+                                .map_err(|e| thread_state.arg_error(index, e))?;
                             index += consumed;
                             remaining -= consumed;
                         )*

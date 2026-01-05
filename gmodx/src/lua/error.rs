@@ -57,7 +57,7 @@ impl std::fmt::Display for Error {
                 write!(f, "Unknown Lua error (code {code}): {message}")
             }
             Self::Type { expected, got } => {
-                write!(f, "expected {expected}, got {got}")
+                write!(f, "{expected} expected, got {got}")
             }
             Self::BadArgument {
                 arg_num,
