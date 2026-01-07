@@ -16,17 +16,18 @@ pub use r#ref::UserDataRef;
 mod scoped;
 pub use scoped::{ScopedUserData, ScopedUserDataRef};
 
+use crate::lua::value_ref::ValueRef;
 use crate::lua::{self, ffi::lua_State};
 use crate::lua::{Function, Table, ToLua, Value, ffi};
 
-static STORE: Mutex<Option<(Table, Function, Function)>> = Mutex::new(None);
+/// 0 = __index
+/// 1 = __newindex
+static UD_METAMETHODS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 
-fn get_ud_store() -> (Table, Function, Function) {
-    STORE
+fn get_ud_metamethods() -> (i32, i32) {
+    UD_METAMETHODS
         .lock()
         .unwrap()
-        .as_ref()
-        .cloned()
         .expect("userdata store not initialized")
 }
 
@@ -61,11 +62,15 @@ inventory::submit! {
                 end
                 return STORE, __index, __newindex
             ", c"ud_store").expect("failed to load userdata store chunk");
+
             let (store, __index, __newindex) = chunk.call::<(Table, Function, Function)>(l, ()).expect("failed to get userdata store");
-            *STORE.lock().unwrap() = Some((store, __index, __newindex));
-        },
+            store.0.leak_index(); // leak the STORE table to keep it alive forever
+            *UD_METAMETHODS.lock().unwrap() = Some((
+                __index.0.leak_index(),
+                __newindex.0.leak_index(),
+            ));        },
         |_| {
-            *STORE.lock().unwrap() = None;
+            *UD_METAMETHODS.lock().unwrap() = None;
         },
     )
 }
@@ -175,11 +180,11 @@ fn push_methods_table<T: UserData>(l: &lua::State) {
         ffi::lua_setfield(l.0, -2, c"__tostring".as_ptr());
     }
 
-    let (_, __index, __newindex) = get_ud_store();
-    __index.push_to_stack(l);
+    let (__index, __newindex) = get_ud_metamethods();
+    ValueRef::push_index(l, __index);
     ffi::lua_setfield(l.0, -2, c"__index".as_ptr());
 
-    __newindex.push_to_stack(l);
+    ValueRef::push_index(l, __newindex);
     ffi::lua_setfield(l.0, -2, c"__newindex".as_ptr());
 
     ffi::lua_pushcfunction(l.0, Some(__gc));
