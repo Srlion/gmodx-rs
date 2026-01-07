@@ -113,6 +113,10 @@ impl Value {
     pub(crate) fn ref_state(&self) -> lua::State {
         self.inner.ref_state()
     }
+
+    pub(crate) fn leak_index(self) -> i32 {
+        self.inner.leak_index()
+    }
 }
 
 impl fmt::Display for Value {

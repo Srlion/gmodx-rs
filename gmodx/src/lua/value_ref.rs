@@ -77,7 +77,7 @@ impl ValueRef {
     }
 
     pub(crate) fn push(&self, to: &lua::State) {
-        ffi::lua_xpush(ref_state().0, to.0, self.index);
+        Self::push_index(to, self.index);
     }
 
     pub(crate) fn pop() -> Self {
@@ -99,6 +99,17 @@ impl ValueRef {
     #[inline]
     pub(crate) fn ref_state(&self) -> lua::State {
         ref_state()
+    }
+
+    pub(crate) fn leak_index(self) -> i32 {
+        let index = self.index;
+        std::mem::forget(self);
+        index
+    }
+
+    /// Push a raw leaked index onto a stack
+    pub(crate) fn push_index(l: &lua::State, index: i32) {
+        ffi::lua_xpush(ref_state().0, l.0, index);
     }
 }
 
