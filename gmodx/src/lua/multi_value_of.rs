@@ -45,22 +45,18 @@ impl<T> IntoIterator for MultiValueOf<T> {
 }
 
 impl<T: ToLua> ToLuaMulti for MultiValueOf<T> {
-    fn push_to_stack_multi(self, state: &lua::State) {
+    fn push_to_stack_multi(self, l: &lua::State) {
         for v in self.0 {
-            v.push_to_stack(state);
+            v.push_to_stack(l);
         }
     }
 }
 
 impl<T: FromLua> FromLuaMulti for MultiValueOf<T> {
-    fn try_from_stack_multi(
-        state: &lua::State,
-        start: i32,
-        count: i32,
-    ) -> lua::Result<(Self, i32)> {
+    fn try_from_stack_multi(l: &lua::State, start: i32, count: i32) -> lua::Result<(Self, i32)> {
         let mut vec = Vec::with_capacity(count as usize);
         for i in 0..count {
-            vec.push(T::try_from_stack(state, start + i)?);
+            vec.push(T::try_from_stack(l, start + i)?);
         }
         Ok((Self(vec), count))
     }

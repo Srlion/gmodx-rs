@@ -84,18 +84,18 @@ where
     Some(s.runtime.block_on(fut))
 }
 
-fn load_threads_from_convar(state: &lua::State) -> Option<usize> {
-    let globals = state.globals();
+fn load_threads_from_convar(l: &lua::State) -> Option<usize> {
+    let globals = l.globals();
 
-    let flags = state.create_table();
+    let flags = l.create_table();
     for (idx, name) in ["FCVAR_ARCHIVE", "FCVAR_PROTECTED"].iter().enumerate() {
-        let cvar_flag = globals.get::<Value>(state, *name).ok()?;
-        flags.set(state, idx + 1, cvar_flag).ok()?;
+        let cvar_flag = globals.get::<Value>(l, *name).ok()?;
+        flags.set(l, idx + 1, cvar_flag).ok()?;
     }
 
     let convar: AnyUserData = globals
         .call(
-            state,
+            l,
             "CreateConVar",
             (
                 "GMODX_ASYNC_THREADS",
@@ -106,21 +106,21 @@ fn load_threads_from_convar(state: &lua::State) -> Option<usize> {
         )
         .ok()?;
 
-    convar.call_method(state, "GetInt", ()).ok()
+    convar.call_method(l, "GetInt", ()).ok()
 }
 
-fn load_timeout_from_convar(state: &lua::State) -> Option<u64> {
-    let globals = state.globals();
+fn load_timeout_from_convar(l: &lua::State) -> Option<u64> {
+    let globals = l.globals();
 
-    let flags = state.create_table();
+    let flags = l.create_table();
     for (idx, name) in ["FCVAR_ARCHIVE", "FCVAR_PROTECTED"].iter().enumerate() {
-        let cvar_flag = globals.get::<Value>(state, *name).ok()?;
-        flags.set(state, idx + 1, cvar_flag).ok()?;
+        let cvar_flag = globals.get::<Value>(l, *name).ok()?;
+        flags.set(l, idx + 1, cvar_flag).ok()?;
     }
 
     let convar: AnyUserData = globals
         .call(
-            state,
+            l,
             "CreateConVar",
             (
                 "GMODX_GRACEFUL_SHUTDOWN_TIMEOUT",
@@ -131,14 +131,14 @@ fn load_timeout_from_convar(state: &lua::State) -> Option<u64> {
         )
         .ok()?;
 
-    convar.call_method(state, "GetInt", ()).ok()
+    convar.call_method(l, "GetInt", ()).ok()
 }
 
-fn initialize(state: &lua::State) {
-    let thread_count = load_threads_from_convar(state)
+fn initialize(l: &lua::State) {
+    let thread_count = load_threads_from_convar(l)
         .unwrap_or(DEFAULT_ASYNC_THREADS_COUNT)
         .max(1);
-    let graceful_shutdown_timeout = load_timeout_from_convar(state)
+    let graceful_shutdown_timeout = load_timeout_from_convar(l)
         .unwrap_or(DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT)
         .max(1);
 

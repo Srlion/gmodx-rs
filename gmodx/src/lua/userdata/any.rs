@@ -23,52 +23,52 @@ impl AnyUserData {
 
     #[inline]
     pub(crate) fn from_stack_with_type(
-        state: &lua::State,
+        l: &lua::State,
         index: i32,
         type_name: &str,
     ) -> Result<Self> {
-        if ffi::lua_type(state.0, index) == ffi::LUA_TUSERDATA {
-            Ok(Self(Value::from_stack(state, index)))
+        if ffi::lua_type(l.0, index) == ffi::LUA_TUSERDATA {
+            Ok(Self(Value::from_stack(l, index)))
         } else {
-            Err(state.type_error(index, type_name))
+            Err(l.type_error(index, type_name))
         }
     }
 }
 
 impl ObjectLike for AnyUserData {
-    fn get<V: FromLua>(&self, state: &lua::State, key: impl ToLua) -> Result<V> {
-        Table(self.0.clone()).get_protected(state, key)
+    fn get<V: FromLua>(&self, l: &lua::State, key: impl ToLua) -> Result<V> {
+        Table(self.0.clone()).get_protected(l, key)
     }
 
-    fn set(&self, state: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
-        Table(self.0.clone()).set_protected(state, key, value)
+    fn set(&self, l: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
+        Table(self.0.clone()).set_protected(l, key, value)
     }
 
     #[inline]
     fn call<R: FromLuaMulti>(
         &self,
-        state: &lua::State,
+        l: &lua::State,
         name: &str,
         args: impl ToLuaMulti,
     ) -> Result<R> {
-        let func: Function = self.get(state, name)?;
-        func.call(state, args)
+        let func: Function = self.get(l, name)?;
+        func.call(l, args)
     }
 
     #[inline]
     fn call_method<R: FromLuaMulti>(
         &self,
-        state: &lua::State,
+        l: &lua::State,
         name: &str,
         args: impl ToLuaMulti,
     ) -> Result<R> {
-        self.call(state, name, (self, args))
+        self.call(l, name, (self, args))
     }
 }
 
 impl ToLua for AnyUserData {
-    fn push_to_stack(self, state: &lua::State) {
-        self.0.push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        self.0.push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -77,9 +77,9 @@ impl ToLua for AnyUserData {
 }
 
 impl ToLua for &AnyUserData {
-    fn push_to_stack(self, state: &lua::State) {
+    fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(state);
+        (&self.0).push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -89,7 +89,7 @@ impl ToLua for &AnyUserData {
 
 impl FromLua for AnyUserData {
     #[inline]
-    fn try_from_stack(state: &lua::State, index: i32) -> Result<AnyUserData> {
-        Self::from_stack_with_type(state, index, "userdata")
+    fn try_from_stack(l: &lua::State, index: i32) -> Result<AnyUserData> {
+        Self::from_stack_with_type(l, index, "userdata")
     }
 }

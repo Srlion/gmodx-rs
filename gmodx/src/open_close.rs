@@ -79,15 +79,15 @@ pub(crate) fn get_main_lua_state() -> lua::State {
 }
 
 #[allow(unused)]
-pub fn load_all(state: &lua::State) {
-    MAIN_LUA_STATE.store(state.0, Ordering::Release);
+pub fn load_all(l: &lua::State) {
+    MAIN_LUA_STATE.store(l.0, Ordering::Release);
     IS_MAIN_THREAD.with(|cell| cell.set(true));
     GMOD_CLOSED.store(false, Ordering::Release);
 
     let modules = get_sorted_modules();
     for module in &modules {
-        ffi::lua_settop(state.0, 1); // Clear the stack, on gmod13_open, there is a string at index 1
-        (module.open)(state);
+        ffi::lua_settop(l.0, 1); // Clear the stack, on gmod13_open, there is a string at index 1
+        (module.open)(l);
         #[cfg(debug_assertions)]
         println!(
             "[gmodx] Loaded OpenClose '{}' (priority: {})",
@@ -97,15 +97,15 @@ pub fn load_all(state: &lua::State) {
 }
 
 #[allow(unused)]
-pub fn unload_all(state: &lua::State) {
+pub fn unload_all(l: &lua::State) {
     GMOD_CLOSED.store(true, Ordering::Release);
     MAIN_LUA_STATE.store(std::ptr::null_mut(), Ordering::Release);
 
     let modules = get_sorted_modules();
     // Unload in reverse order
     for module in modules.iter().rev() {
-        ffi::lua_settop(state.0, 0); // Clear the stack
-        (module.close)(state);
+        ffi::lua_settop(l.0, 0); // Clear the stack
+        (module.close)(l);
         #[cfg(debug_assertions)]
         println!(
             "[gmodx] Unloaded OpenClose '{}' (priority: {})",

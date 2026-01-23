@@ -58,17 +58,17 @@ impl fmt::Display for ValueKind {
 
 impl Value {
     #[must_use]
-    pub fn from_stack(state: &lua::State, index: i32) -> Self {
-        ffi::lua_pushvalue(state.0, index);
-        Self::pop_from_stack(state)
+    pub fn from_stack(l: &lua::State, index: i32) -> Self {
+        ffi::lua_pushvalue(l.0, index);
+        Self::pop_from_stack(l)
     }
 
     #[must_use]
-    pub fn pop_from_stack(state: &lua::State) -> Self {
-        let type_id = ffi::lua_type(state.0, -1);
+    pub fn pop_from_stack(l: &lua::State) -> Self {
+        let type_id = ffi::lua_type(l.0, -1);
         Self {
             type_id,
-            inner: ValueRef::pop_from(state),
+            inner: ValueRef::pop_from(l),
         }
     }
 
@@ -98,12 +98,12 @@ impl Value {
         self.type_kind().as_str()
     }
 
-    pub fn to<T: FromLua>(self, state: &lua::State) -> Result<T> {
-        T::try_from_value(self, state)
+    pub fn to<T: FromLua>(self, l: &lua::State) -> Result<T> {
+        T::try_from_value(self, l)
     }
 
-    pub fn push_to_stack(&self, state: &lua::State) {
-        self.inner.push(state);
+    pub fn push_to_stack(&self, l: &lua::State) {
+        self.inner.push(l);
     }
 
     pub(crate) const fn index(&self) -> i32 {
@@ -126,8 +126,8 @@ impl fmt::Display for Value {
 }
 
 impl ToLua for Value {
-    fn push_to_stack(self, state: &lua::State) {
-        Self::push_to_stack(&self, state);
+    fn push_to_stack(self, l: &lua::State) {
+        Self::push_to_stack(&self, l);
     }
 
     fn to_value(self, _: &lua::State) -> Self {
@@ -136,8 +136,8 @@ impl ToLua for Value {
 }
 
 impl ToLua for &Value {
-    fn push_to_stack(self, state: &lua::State) {
-        Value::push_to_stack(self, state);
+    fn push_to_stack(self, l: &lua::State) {
+        Value::push_to_stack(self, l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -146,8 +146,8 @@ impl ToLua for &Value {
 }
 
 impl FromLua for Value {
-    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-        Ok(Self::from_stack(state, index))
+    fn try_from_stack(l: &lua::State, index: i32) -> Result<Self> {
+        Ok(Self::from_stack(l, index))
     }
 
     fn try_from_value(value: Value, _: &lua::State) -> Result<Self> {
@@ -208,13 +208,13 @@ impl MultiValue {
     #[allow(unused)]
     #[inline]
     pub(crate) fn from_lua_iter<T: ToLua>(
-        state: &lua::State,
+        l: &lua::State,
         iter: impl IntoIterator<Item = T>,
     ) -> Self {
         let iter = iter.into_iter();
         let mut multi_value = Self::with_capacity(iter.size_hint().0);
         for value in iter {
-            multi_value.push_back(value.to_value(state));
+            multi_value.push_back(value.to_value(l));
         }
         multi_value
     }
@@ -256,30 +256,26 @@ impl IntoIterator for MultiValue {
 }
 
 impl ToLuaMulti for MultiValue {
-    fn push_to_stack_multi(self, state: &lua::State) {
+    fn push_to_stack_multi(self, l: &lua::State) {
         for value in self {
-            value.push_to_stack(state);
+            value.push_to_stack(l);
         }
     }
 }
 
 impl ToLuaMulti for &MultiValue {
-    fn push_to_stack_multi(self, state: &lua::State) {
+    fn push_to_stack_multi(self, l: &lua::State) {
         for value in self.iter() {
-            value.push_to_stack(state);
+            value.push_to_stack(l);
         }
     }
 }
 
 impl FromLuaMulti for MultiValue {
-    fn try_from_stack_multi(
-        state: &lua::State,
-        start_index: i32,
-        count: i32,
-    ) -> Result<(Self, i32)> {
+    fn try_from_stack_multi(l: &lua::State, start_index: i32, count: i32) -> Result<(Self, i32)> {
         let mut multi_value = Self::with_capacity(count as usize);
         for i in 0..count {
-            multi_value.push_back(Value::from_stack(state, start_index + i));
+            multi_value.push_back(Value::from_stack(l, start_index + i));
         }
         Ok((multi_value, count))
     }

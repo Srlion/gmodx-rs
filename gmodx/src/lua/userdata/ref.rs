@@ -72,19 +72,19 @@ impl<T: UserData> UserDataRef<T> {
 }
 
 impl<T: UserData> ToLua for UserDataRef<T> {
-    fn push_to_stack(self, state: &lua::State) {
-        self.any.push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        self.any.push_to_stack(l);
     }
 
-    fn to_value(self, state: &lua::State) -> Value {
-        self.any.to_value(state)
+    fn to_value(self, l: &lua::State) -> Value {
+        self.any.to_value(l)
     }
 }
 
 impl<T: UserData> ToLua for &UserDataRef<T> {
-    fn push_to_stack(self, state: &lua::State) {
+    fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.any).push_to_stack(state);
+        (&self.any).push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -93,11 +93,10 @@ impl<T: UserData> ToLua for &UserDataRef<T> {
 }
 
 impl<T: UserData> FromLua for UserDataRef<T> {
-    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
+    fn try_from_stack(l: &lua::State, index: i32) -> Result<Self> {
         let name = T::name();
-        let any = AnyUserData::from_stack_with_type(state, index, name)?;
-        any.cast_to::<T>(state)
-            .ok_or_else(|| state.type_error(index, name))
+        let any = AnyUserData::from_stack_with_type(l, index, name)?;
+        any.cast_to::<T>(l).ok_or_else(|| l.type_error(index, name))
     }
 }
 
@@ -110,8 +109,8 @@ impl<T: UserData> From<UserDataRef<T>> for AnyUserData {
 impl AnyUserData {
     #[must_use]
     #[inline]
-    pub fn cast_to<T: UserData>(self, state: &lua::State) -> Option<UserDataRef<T>> {
-        if !self.is::<RefCell<T>>(state) {
+    pub fn cast_to<T: UserData>(self, l: &lua::State) -> Option<UserDataRef<T>> {
+        if !self.is::<RefCell<T>>(l) {
             return None;
         }
         Some(UserDataRef {

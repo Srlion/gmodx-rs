@@ -48,23 +48,19 @@ inventory::submit! {
 pub struct Function(pub(crate) Value);
 
 impl Function {
-    pub fn call<R: FromLuaMulti>(
-        &self,
-        state: &lua::State,
-        args: impl ToLuaMulti,
-    ) -> lua::Result<R> {
-        let stack_start = ffi::lua_gettop(state.0);
-        let _sg = StackGuard::with_top(state.0, stack_start);
+    pub fn call<R: FromLuaMulti>(&self, l: &lua::State, args: impl ToLuaMulti) -> lua::Result<R> {
+        let stack_start = ffi::lua_gettop(l.0);
+        let _sg = StackGuard::with_top(l.0, stack_start);
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(state); // Push the function onto the stack
-        args.push_to_stack_multi(state);
-        let nargs = ffi::lua_gettop(state.0) - stack_start - 1;
-        match ffi::lua_pcall(state.0, nargs, ffi::LUA_MULTRET, 0) {
+        (&self.0).push_to_stack(l); // Push the function onto the stack
+        args.push_to_stack_multi(l);
+        let nargs = ffi::lua_gettop(l.0) - stack_start - 1;
+        match ffi::lua_pcall(l.0, nargs, ffi::LUA_MULTRET, 0) {
             ffi::LUA_OK => {}
-            res => return Err(state.pop_error(res)),
+            res => return Err(l.pop_error(res)),
         }
-        let nresults = ffi::lua_gettop(state.0) - stack_start;
-        R::try_from_stack_multi(state, stack_start + 1, nresults).map(|(v, _)| v)
+        let nresults = ffi::lua_gettop(l.0) - stack_start;
+        R::try_from_stack_multi(l, stack_start + 1, nresults).map(|(v, _)| v)
     }
 
     #[cfg(feature = "tokio")]
@@ -149,8 +145,8 @@ impl lua::State {
         }
 
         if ffi::luaL_newmetatable(self.0, CLOSURE_GC_METATABLE_NAME.as_ptr()) {
-            extern "C-unwind" fn gc_rust_function(state: *mut lua::ffi::lua_State) -> i32 {
-                let l = lua::State(state);
+            extern "C-unwind" fn gc_rust_function(l: *mut lua::ffi::lua_State) -> i32 {
+                let l = lua::State(l);
                 let data_ptr = ffi::lua_touserdata(l.0, 1).cast::<Callback>();
                 if !data_ptr.is_null() {
                     unsafe {
@@ -216,9 +212,9 @@ impl lua::State {
     }
 }
 
-extern "C-unwind" fn rust_closure_callback(state: *mut ffi::lua_State) -> i32 {
+extern "C-unwind" fn rust_closure_callback(l: *mut ffi::lua_State) -> i32 {
     {
-        let l = lua::State(state);
+        let l = lua::State(l);
         let data_ptr = ffi::lua_touserdata(l.0, ffi::lua_upvalueindex(1)) as *const Callback;
         if data_ptr.is_null() {
             ffi::lua_pushstring(l.0, c"attempt to call a nil value".as_ptr());
@@ -234,12 +230,12 @@ extern "C-unwind" fn rust_closure_callback(state: *mut ffi::lua_State) -> i32 {
             }
         }
     }
-    ffi::lua_error(state);
+    ffi::lua_error(l);
 }
 
 impl ToLua for Function {
-    fn push_to_stack(self, state: &lua::State) {
-        self.0.push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        self.0.push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -248,9 +244,9 @@ impl ToLua for Function {
 }
 
 impl ToLua for &Function {
-    fn push_to_stack(self, state: &lua::State) {
+    fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(state);
+        (&self.0).push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -259,10 +255,10 @@ impl ToLua for &Function {
 }
 
 impl FromLua for Function {
-    fn try_from_stack(state: &lua::State, index: i32) -> lua::Result<Self> {
-        match ffi::lua_type(state.0, index) {
-            ffi::LUA_TFUNCTION => Ok(Self(Value::from_stack(state, index))),
-            _ => Err(state.type_error(index, "function")),
+    fn try_from_stack(l: &lua::State, index: i32) -> lua::Result<Self> {
+        match ffi::lua_type(l.0, index) {
+            ffi::LUA_TFUNCTION => Ok(Self(Value::from_stack(l, index))),
+            _ => Err(l.type_error(index, "function")),
         }
     }
 }
@@ -318,18 +314,18 @@ macro_rules! impl_into_lua_function {
             fn into_function(self) -> Function {
                 #[allow(unused)]
                 #[allow(non_snake_case)]
-                let callback = Box::new(move |state: &lua::State| {
-                    let nargs = ffi::lua_gettop(state.0);
+                let callback = Box::new(move |l: &lua::State| {
+                    let nargs = ffi::lua_gettop(l.0);
                     let mut index = 1;
                     let mut remaining = nargs;
                     $(
-                        let ($name, consumed) = $name::try_from_stack_multi(state, index, remaining)
-                            .map_err(|e| state.arg_error(index, e))?;
+                        let ($name, consumed) = $name::try_from_stack_multi(l, index, remaining)
+                            .map_err(|e| l.arg_error(index, e))?;
                         index += consumed;
                         remaining -= consumed;
                     )*
-                    let ret = self(state, $($name,)*).into_callback_result()?;
-                    Ok(ret.push_to_stack_multi_count(state))
+                    let ret = self(l, $($name,)*).into_callback_result()?;
+                    Ok(ret.push_to_stack_multi_count(l))
                 });
                 let l = lua::lock().unwrap();
                 l.create_function_impl(callback)

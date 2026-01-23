@@ -109,28 +109,25 @@ impl lua::State {
 }
 
 impl ToLua for Thread {
-    fn push_to_stack(self, state: &lua::State) {
-        self.0.push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        self.0.push_to_stack(l);
     }
 }
 
 impl ToLua for &Thread {
-    fn push_to_stack(self, state: &lua::State) {
-        (&self.0).push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        (&self.0).push_to_stack(l);
     }
 }
 
 impl FromLua for Thread {
-    fn try_from_stack(state: &lua::State, index: i32) -> lua::Result<Self> {
-        match ffi::lua_type(state.0, index) {
+    fn try_from_stack(l: &lua::State, index: i32) -> lua::Result<Self> {
+        match ffi::lua_type(l.0, index) {
             ffi::LUA_TTHREAD => {
-                let thread_state = lua::State(ffi::lua_tothread(state.0, index));
-                Ok(Self(
-                    Value::from_stack(state, index),
-                    thread_state.as_usize(),
-                ))
+                let thread_state = lua::State(ffi::lua_tothread(l.0, index));
+                Ok(Self(Value::from_stack(l, index), thread_state.as_usize()))
             }
-            _ => Err(state.type_error(index, "thread")),
+            _ => Err(l.type_error(index, "thread")),
         }
     }
 }

@@ -15,48 +15,48 @@ fn push_atleast_one<T: ToLuaMulti>(state: &lua::State, value: T) {
 pub struct Table(pub(crate) Value);
 
 impl Table {
-    pub fn set(&self, state: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
-        if !self.has_metatable(state) {
+    pub fn set(&self, l: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
+        if !self.has_metatable(l) {
             // If the table has no metatable, we can use rawset directly
             // this is because rawset cannot fail
-            self.raw_set(state, key, value);
+            self.raw_set(l, key, value);
             return Ok(());
         }
 
         // Otherwise, we use the protected version because lua can longjmp if __newindex errors
-        self.set_protected(state, key, value)
+        self.set_protected(l, key, value)
     }
 
-    pub fn get<V: FromLua>(&self, state: &lua::State, key: impl ToLua) -> Result<V> {
-        if !self.has_metatable(state) {
-            return self.raw_get(state, key);
+    pub fn get<V: FromLua>(&self, l: &lua::State, key: impl ToLua) -> Result<V> {
+        if !self.has_metatable(l) {
+            return self.raw_get(l, key);
         }
 
-        self.get_protected(state, key)
+        self.get_protected(l, key)
     }
 
     // TODO: should make it call __len, lua 5.1 does not invoke __len, has to be implemented manually
-    pub fn len(&self, state: &lua::State) -> Result<usize> {
-        Ok(self.raw_len(state))
+    pub fn len(&self, l: &lua::State) -> Result<usize> {
+        Ok(self.raw_len(l))
     }
 
-    pub fn raw_set(&self, state: &lua::State, key: impl ToLua, value: impl ToLua) {
-        let _sg = state.stack_guard();
+    pub fn raw_set(&self, l: &lua::State, key: impl ToLua, value: impl ToLua) {
+        let _sg = l.stack_guard();
 
-        self.push_to_stack(state); // push the table
-        push_atleast_one(state, key); // push the key
-        push_atleast_one(state, value); // push the value
-        ffi::lua_rawset(state.0, -3);
+        self.push_to_stack(l); // push the table
+        push_atleast_one(l, key); // push the key
+        push_atleast_one(l, value); // push the value
+        ffi::lua_rawset(l.0, -3);
     }
 
-    pub fn raw_get<V: FromLua>(&self, state: &lua::State, key: impl ToLua) -> Result<V> {
-        let _sg = state.stack_guard();
+    pub fn raw_get<V: FromLua>(&self, l: &lua::State, key: impl ToLua) -> Result<V> {
+        let _sg = l.stack_guard();
 
-        self.push_to_stack(state); // push the table
-        push_atleast_one(state, key); // push the key
-        ffi::lua_rawget(state.0, -2);
+        self.push_to_stack(l); // push the table
+        push_atleast_one(l, key); // push the key
+        ffi::lua_rawget(l.0, -2);
 
-        V::try_from_stack(state, -1)
+        V::try_from_stack(l, -1)
     }
 
     // the lua state is only used to ensure we are on main thread
@@ -79,23 +79,23 @@ impl Table {
 
     #[must_use]
     #[inline]
-    pub fn ipairs<V: FromLua>(&self, state: &lua::State) -> IPairsIter<V> {
+    pub fn ipairs<V: FromLua>(&self, l: &lua::State) -> IPairsIter<V> {
         IPairsIter {
             table: self.clone(),
-            state: state.clone(),
+            state: l.clone(),
             index: 0,
-            len: self.raw_len(state),
+            len: self.raw_len(l),
             _phantom: std::marker::PhantomData,
         }
     }
 
     #[must_use]
     #[inline]
-    pub fn pairs<K: FromLua, V: FromLua>(&self, state: &lua::State) -> PairsIter<K, V> {
+    pub fn pairs<K: FromLua, V: FromLua>(&self, l: &lua::State) -> PairsIter<K, V> {
         PairsIter {
             table: self.clone(),
-            state: state.clone(),
-            key: Nil.to_value(state),
+            state: l.clone(),
+            key: Nil.to_value(l),
             done: false,
             _phantom: std::marker::PhantomData,
         }
@@ -113,23 +113,23 @@ impl Table {
 
     pub(crate) fn set_protected(
         &self,
-        state: &lua::State,
+        l: &lua::State,
         key: impl ToLua,
         value: impl ToLua,
     ) -> Result<()> {
-        unsafe extern "C-unwind" fn safe_settable(state: *mut ffi::lua_State) -> i32 {
+        unsafe extern "C-unwind" fn safe_settable(l: *mut ffi::lua_State) -> i32 {
             // stack: table, key, value
-            ffi::lua_settable(state, -3);
+            ffi::lua_settable(l, -3);
             0
         }
 
-        let _sg = state.stack_guard();
+        let _sg = l.stack_guard();
 
-        ffi::lua_pushcfunction(state.0, Some(safe_settable));
-        self.push_to_stack(state); // push the table
-        push_atleast_one(state, key); // push the key
-        push_atleast_one(state, value); // push the value
-        state.protect_lua_call(3, 0)?;
+        ffi::lua_pushcfunction(l.0, Some(safe_settable));
+        self.push_to_stack(l); // push the table
+        push_atleast_one(l, key); // push the key
+        push_atleast_one(l, value); // push the value
+        l.protect_lua_call(3, 0)?;
 
         Ok(())
     }
@@ -139,9 +139,9 @@ impl Table {
         state: &lua::State,
         key: impl ToLua,
     ) -> Result<V> {
-        unsafe extern "C-unwind" fn safe_gettable(state: *mut ffi::lua_State) -> i32 {
+        unsafe extern "C-unwind" fn safe_gettable(l: *mut ffi::lua_State) -> i32 {
             // stack: table, key
-            ffi::lua_gettable(state, -2);
+            ffi::lua_gettable(l, -2);
             1
         }
 
@@ -170,8 +170,8 @@ impl lua::State {
 }
 
 impl ToLua for Table {
-    fn push_to_stack(self, state: &lua::State) {
-        self.0.push_to_stack(state);
+    fn push_to_stack(self, l: &lua::State) {
+        self.0.push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -180,9 +180,9 @@ impl ToLua for Table {
 }
 
 impl ToLua for &Table {
-    fn push_to_stack(self, state: &lua::State) {
+    fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(state);
+        (&self.0).push_to_stack(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
@@ -191,44 +191,44 @@ impl ToLua for &Table {
 }
 
 impl FromLua for Table {
-    fn try_from_stack(state: &lua::State, index: i32) -> Result<Self> {
-        match lua::ffi::lua_type(state.0, index) {
-            lua::ffi::LUA_TTABLE => Ok(Self(Value::from_stack(state, index))),
-            _ => Err(state.type_error(index, "table")),
+    fn try_from_stack(l: &lua::State, index: i32) -> Result<Self> {
+        match lua::ffi::lua_type(l.0, index) {
+            lua::ffi::LUA_TTABLE => Ok(Self(Value::from_stack(l, index))),
+            _ => Err(l.type_error(index, "table")),
         }
     }
 }
 
 impl ObjectLike for Table {
     #[inline]
-    fn get<V: FromLua>(&self, state: &lua::State, key: impl ToLua) -> Result<V> {
-        self.get(state, key)
+    fn get<V: FromLua>(&self, l: &lua::State, key: impl ToLua) -> Result<V> {
+        self.get(l, key)
     }
 
     #[inline]
-    fn set(&self, state: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
-        self.set(state, key, value)
+    fn set(&self, l: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
+        self.set(l, key, value)
     }
 
     #[inline]
     fn call<R: FromLuaMulti>(
         &self,
-        state: &lua::State,
+        l: &lua::State,
         name: &str,
         args: impl ToLuaMulti,
     ) -> lua::Result<R> {
-        let func: Function = self.get(state, name)?;
-        func.call(state, args)
+        let func: Function = self.get(l, name)?;
+        func.call(l, args)
     }
 
     #[inline]
     fn call_method<R: FromLuaMulti>(
         &self,
-        state: &lua::State,
+        l: &lua::State,
         name: &str,
         args: impl ToLuaMulti,
     ) -> lua::Result<R> {
-        self.call(state, name, (self, args))
+        self.call(l, name, (self, args))
     }
 }
 
