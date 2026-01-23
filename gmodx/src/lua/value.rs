@@ -12,8 +12,6 @@ use crate::lua::{
 
 #[derive(Clone, Debug)]
 pub struct Value {
-    /// The Lua type ID of this value.
-    pub(crate) type_id: i32,
     /// The inner value reference.
     pub(crate) inner: ValueRef,
 }
@@ -67,19 +65,18 @@ impl Value {
     pub fn pop_from_stack(l: &lua::State) -> Self {
         let type_id = ffi::lua_type(l.0, -1);
         Self {
-            type_id,
-            inner: ValueRef::pop_from(l),
+            inner: ValueRef::pop_from(l, type_id),
         }
     }
 
     #[must_use]
-    pub const fn type_id(&self) -> i32 {
-        self.type_id
+    pub fn type_id(&self) -> i32 {
+        self.inner.type_id()
     }
 
     #[must_use]
-    pub const fn type_kind(&self) -> ValueKind {
-        match self.type_id {
+    pub fn type_kind(&self) -> ValueKind {
+        match self.type_id() {
             ffi::LUA_TNIL | ffi::LUA_TNONE => ValueKind::Nil,
             ffi::LUA_TBOOLEAN => ValueKind::Bool,
             ffi::LUA_TLIGHTUSERDATA => ValueKind::LightUserData,
@@ -94,7 +91,7 @@ impl Value {
     }
 
     #[must_use]
-    pub const fn type_name(&self) -> &'static str {
+    pub fn type_name(&self) -> &'static str {
         self.type_kind().as_str()
     }
 
@@ -106,8 +103,8 @@ impl Value {
         self.inner.push(l);
     }
 
-    pub(crate) const fn index(&self) -> i32 {
-        self.inner.index
+    pub(crate) fn index(&self) -> i32 {
+        self.inner.index()
     }
 
     pub(crate) fn ref_state(&self) -> lua::State {

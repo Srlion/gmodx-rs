@@ -53,11 +53,10 @@ static REF_STATE: AtomicPtr<ffi::lua_State> = AtomicPtr::new(std::ptr::null_mut(
 
 #[derive(Clone)]
 pub struct ValueRef {
-    // Same as xrc_index but to have faster access
-    pub(crate) index: i32,
+    /// (index, type_id)
     /// A reference to a Lua value index in the auxiliary thread.
     /// It's cheap to clone and can be used to track the number of references to a value.
-    pub(crate) xrc: ManuallyDrop<XRc<i32>>,
+    pub(crate) xrc: ManuallyDrop<XRc<(i32, i32)>>,
 }
 
 #[inline]
@@ -69,18 +68,27 @@ fn ref_state() -> lua::State {
 
 impl ValueRef {
     #[inline]
-    pub(crate) fn new(index: i32) -> Self {
+    pub(crate) fn new(index: i32, type_id: i32) -> Self {
         Self {
-            index,
-            xrc: ManuallyDrop::new(XRc::new(index)),
+            xrc: ManuallyDrop::new(XRc::new((index, type_id))),
         }
     }
 
-    pub(crate) fn push(&self, to: &lua::State) {
-        Self::push_index(to, self.index);
+    #[inline]
+    pub(crate) fn index(&self) -> i32 {
+        self.xrc.0
     }
 
-    pub(crate) fn pop() -> Self {
+    #[inline]
+    pub(crate) fn type_id(&self) -> i32 {
+        self.xrc.1
+    }
+
+    pub(crate) fn push(&self, to: &lua::State) {
+        Self::push_index(to, self.index());
+    }
+
+    pub(crate) fn pop(type_id: i32) -> Self {
         let state = ref_state();
         let mut slots = SLOTS.lock().unwrap();
         let (index, reused) = slots.take();
@@ -88,12 +96,12 @@ impl ValueRef {
             ffi::lua_replace(state.0, index);
         }
         drop(slots);
-        Self::new(index)
+        Self::new(index, type_id)
     }
 
-    pub(crate) fn pop_from(from: &lua::State) -> Self {
+    pub(crate) fn pop_from(from: &lua::State, type_id: i32) -> Self {
         ffi::lua_xmove(from.0, ref_state().0, 1);
-        Self::pop()
+        Self::pop(type_id)
     }
 
     #[inline]
@@ -102,7 +110,7 @@ impl ValueRef {
     }
 
     pub(crate) fn leak_index(self) -> i32 {
-        let index = self.index;
+        let index = self.index();
         std::mem::forget(self);
         index
     }
@@ -116,7 +124,7 @@ impl ValueRef {
 impl Drop for ValueRef {
     fn drop(&mut self) {
         let xrc = unsafe { ManuallyDrop::take(&mut self.xrc) };
-        let Some(index) = XRc::into_inner(xrc) else {
+        let Some((index, _)) = XRc::into_inner(xrc) else {
             return;
         };
 
@@ -140,7 +148,7 @@ impl Drop for ValueRef {
 
 impl fmt::Debug for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ValueRef({})", self.index)
+        write!(f, "ValueRef({})", self.index())
     }
 }
 
