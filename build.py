@@ -161,7 +161,8 @@ def ensure_rust_toolchain_and_target(toolchain: str, target: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build Rust cdylib for Garry's Mod.")
+    parser = argparse.ArgumentParser(
+        description="Build Rust cdylib for Garry's Mod.")
     parser.add_argument(
         "-C",
         "--directory",
@@ -205,6 +206,9 @@ def main():
     parser.add_argument(
         "--windows-gnu", action="store_true", help="Build for Windows GNU toolchain"
     )
+    parser.add_argument(
+        "--cross", action="store_true", help="Use cross-rs for cross-compilation"
+    )
 
     args = parser.parse_args()
 
@@ -219,7 +223,8 @@ def main():
     pkg_dir, lib_name = infer_pkg_and_lib(workdir)
     base_name = args.name or lib_name
 
-    ensure_rust_toolchain_and_target(args.toolchain, target)
+    if not args.cross:
+        ensure_rust_toolchain_and_target(args.toolchain, target)
 
     env = os.environ.copy()
 
@@ -231,7 +236,8 @@ def main():
         rustflags.extend(args.rustflags.strip().split())
     env["RUSTFLAGS"] = " ".join(rustflags)
 
-    target_dir = Path(env.get("CARGO_TARGET_DIR") or (pkg_dir / "target")).resolve()
+    target_dir = Path(env.get("CARGO_TARGET_DIR")
+                      or (pkg_dir / "target")).resolve()
     env["CARGO_TARGET_DIR"] = str(target_dir)
     profile = "debug" if args.dev else "release"
 
@@ -254,7 +260,14 @@ def main():
     ensure_dir(Path(args.outdir))
     ensure_dir(target_dir)
 
-    cargo_cmd = ["cargo", f"+{args.toolchain}", "build", "--target", target]
+    builder = "cross" if args.cross else "cargo"
+
+    if args.cross:
+        cargo_cmd = [builder, "build", "--target", target]
+    else:
+        cargo_cmd = [builder, f"+{args.toolchain}",
+                     "build", "--target", target]
+
     if not args.dev:
         cargo_cmd.append("--release")
 
