@@ -16,9 +16,13 @@ pub struct Value {
     pub(crate) inner: ValueRef,
 }
 
-#[derive(Debug)]
+// https://github.com/Facepunch/gmod-module-base/blob/development/include/GarrysMod/Lua/Types.h
+#[repr(i32)]
+#[non_exhaustive]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ValueKind {
-    Nil,
+    None = -1,
+    Nil = 0,
     Bool,
     LightUserData,
     Number,
@@ -27,13 +31,63 @@ pub enum ValueKind {
     Function,
     UserData,
     Thread,
-    Unknown,
+
+    // GMod Types
+    Entity,
+    Vector,
+    Angle,
+    PhysObj,
+    Save,
+    Restore,
+    DamageInfo,
+    EffectData,
+    MoveData,
+    RecipientFilter,
+    UserCmd,
+    ScriptedVehicle,
+    Material,
+    Panel,
+    Particle,
+    ParticleEmitter,
+    Texture,
+    UserMsg,
+    ConVar,
+    IMesh,
+    Matrix,
+    Sound,
+    PixelVisHandle,
+    DLight,
+    Video,
+    File,
+    Locomotion,
+    Path,
+    NavArea,
+    SoundHandle,
+    NavLadder,
+    ParticleSystem,
+    ProjectedTexture,
+    PhysCollide,
+    SurfaceInfo,
+
+    TypeCount,
 }
 
 impl ValueKind {
     #[must_use]
+    #[inline]
+    pub fn from_i32(id: i32) -> Self {
+        assert!(
+            id >= Self::None as i32 && id < Self::TypeCount as i32,
+            "Invalid lua type id: {id}"
+        );
+
+        unsafe { std::mem::transmute(id) }
+    }
+
+    #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::Nil => "nil",
             Self::Bool => "boolean",
             Self::LightUserData => "lightuserdata",
@@ -43,7 +97,43 @@ impl ValueKind {
             Self::Function => "function",
             Self::UserData => "userdata",
             Self::Thread => "thread",
-            Self::Unknown => "unknown",
+
+            Self::Entity => "entity",
+            Self::Vector => "vector",
+            Self::Angle => "angle",
+            Self::PhysObj => "physobj",
+            Self::Save => "save",
+            Self::Restore => "restore",
+            Self::DamageInfo => "damageinfo",
+            Self::EffectData => "effectdata",
+            Self::MoveData => "movedata",
+            Self::RecipientFilter => "recipientfilter",
+            Self::UserCmd => "usercmd",
+            Self::ScriptedVehicle => "scriptedvehicle",
+            Self::Material => "material",
+            Self::Panel => "panel",
+            Self::Particle => "particle",
+            Self::ParticleEmitter => "particleemitter",
+            Self::Texture => "texture",
+            Self::UserMsg => "usermsg",
+            Self::ConVar => "convar",
+            Self::IMesh => "imesh",
+            Self::Matrix => "matrix",
+            Self::Sound => "sound",
+            Self::PixelVisHandle => "pixelvishandle",
+            Self::DLight => "dlight",
+            Self::Video => "video",
+            Self::File => "file",
+            Self::Locomotion => "locomotion",
+            Self::Path => "path",
+            Self::NavArea => "navarea",
+            Self::SoundHandle => "soundhandle",
+            Self::NavLadder => "navladder",
+            Self::ParticleSystem => "particlesystem",
+            Self::ProjectedTexture => "projectedtexture",
+            Self::PhysCollide => "physcollide",
+            Self::SurfaceInfo => "surfaceinfo",
+            _ => "unknown",
         }
     }
 }
@@ -76,18 +166,7 @@ impl Value {
 
     #[must_use]
     pub fn type_kind(&self) -> ValueKind {
-        match self.type_id() {
-            ffi::LUA_TNIL | ffi::LUA_TNONE => ValueKind::Nil,
-            ffi::LUA_TBOOLEAN => ValueKind::Bool,
-            ffi::LUA_TLIGHTUSERDATA => ValueKind::LightUserData,
-            ffi::LUA_TNUMBER => ValueKind::Number,
-            ffi::LUA_TSTRING => ValueKind::String,
-            ffi::LUA_TTABLE => ValueKind::Table,
-            ffi::LUA_TFUNCTION => ValueKind::Function,
-            ffi::LUA_TUSERDATA => ValueKind::UserData,
-            ffi::LUA_TTHREAD => ValueKind::Thread,
-            _ => ValueKind::Unknown,
-        }
+        ValueKind::from_i32(self.type_id())
     }
 
     #[must_use]
