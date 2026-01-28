@@ -5,6 +5,7 @@ use bstr::ByteSlice as _;
 use bstr::{BStr, BString};
 
 use crate::lua::traits::{FromLua, ToLua};
+use crate::lua::value::ValueInner;
 use crate::lua::{self, FromLuaMulti, LightUserData, Nil, Result, Table, ToLuaMulti, ffi};
 
 impl<T: ToLua> ToLua for Option<T> {
@@ -54,6 +55,15 @@ impl FromLua for Nil {
         match ffi::lua_type(l.0, index) {
             ffi::LUA_TNIL | ffi::LUA_TNONE => Ok(Self),
             _ => Err(l.type_error(index, "nil")),
+        }
+    }
+
+    #[inline]
+    fn try_from_value(value: lua::Value, l: &lua::State) -> Result<Self> {
+        match value.0 {
+            ValueInner::Nil => Ok(Self),
+            ValueInner::Ref(r) => Self::try_from_stack(&r.ref_state(), r.index()),
+            _ => Err(l.type_error(value.index().unwrap_or(-1), "nil")),
         }
     }
 }

@@ -7,13 +7,18 @@ use std::{
 use crate::lua::{
     self, FromLuaMulti, Result, ToLuaMulti, ffi,
     traits::{FromLua, ToLua},
-    value_ref::ValueRef,
+    value_ref::{ValueRef, ref_state},
 };
 
 #[derive(Clone, Debug)]
-pub struct Value {
-    /// The inner value reference.
-    pub(crate) inner: ValueRef,
+pub struct Value(pub(crate) ValueInner);
+
+#[derive(Clone, Debug)]
+pub(crate) enum ValueInner {
+    Nil,
+    Bool(bool),
+    Number(f64),
+    Ref(ValueRef),
 }
 
 // https://github.com/Facepunch/gmod-module-base/blob/development/include/GarrysMod/Lua/Types.h
@@ -152,16 +157,40 @@ impl Value {
     }
 
     #[must_use]
+    pub(crate) fn from_ref(r: ValueRef) -> Self {
+        Self(ValueInner::Ref(r))
+    }
+
+    #[must_use]
     pub fn pop_from_stack(l: &lua::State) -> Self {
         let type_id = ffi::lua_type(l.0, -1);
-        Self {
-            inner: ValueRef::pop_from(l, type_id),
+        match ValueKind::from_i32(type_id) {
+            ValueKind::Nil => {
+                ffi::lua_pop(l.0, 1);
+                Self(ValueInner::Nil)
+            }
+            ValueKind::Bool => {
+                let val = ffi::lua_toboolean(l.0, -1);
+                ffi::lua_pop(l.0, 1);
+                Self(ValueInner::Bool(val))
+            }
+            ValueKind::Number => {
+                let val = ffi::lua_tonumber(l.0, -1);
+                ffi::lua_pop(l.0, 1);
+                Self(ValueInner::Number(val))
+            }
+            _ => Self(ValueInner::Ref(ValueRef::pop_from(l, type_id))),
         }
     }
 
     #[must_use]
     pub fn type_id(&self) -> i32 {
-        self.inner.type_id()
+        match &self.0 {
+            ValueInner::Nil => ValueKind::Nil as i32,
+            ValueInner::Bool(_) => ValueKind::Bool as i32,
+            ValueInner::Number(_) => ValueKind::Number as i32,
+            ValueInner::Ref(r) => r.type_id(),
+        }
     }
 
     #[must_use]
@@ -179,19 +208,23 @@ impl Value {
     }
 
     pub fn push_to_stack(&self, l: &lua::State) {
-        self.inner.push(l);
+        match &self.0 {
+            ValueInner::Nil => ffi::lua_pushnil(l.0),
+            ValueInner::Bool(b) => b.push_to_stack(l),
+            ValueInner::Number(n) => n.push_to_stack(l),
+            ValueInner::Ref(r) => r.push(l),
+        }
     }
 
-    pub(crate) fn index(&self) -> i32 {
-        self.inner.index()
+    pub(crate) fn index(&self) -> Option<i32> {
+        match &self.0 {
+            ValueInner::Ref(r) => Some(r.index()),
+            _ => None,
+        }
     }
 
     pub(crate) fn ref_state(&self) -> lua::State {
-        self.inner.ref_state()
-    }
-
-    pub(crate) fn leak_index(self) -> i32 {
-        self.inner.leak_index()
+        ref_state()
     }
 }
 

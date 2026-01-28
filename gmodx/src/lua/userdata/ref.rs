@@ -88,7 +88,7 @@ impl<T: UserData> ToLua for &UserDataRef<T> {
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.any.0.clone()
+        Value::from_ref(self.any.0.clone())
     }
 }
 

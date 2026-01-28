@@ -60,7 +60,7 @@ pub struct ValueRef {
 }
 
 #[inline]
-fn ref_state() -> lua::State {
+pub(crate) fn ref_state() -> lua::State {
     let ptr = REF_STATE.load(Ordering::Acquire);
     assert!(!ptr.is_null(), "RefThread not initialized!");
     lua::State(ptr)
@@ -118,6 +118,11 @@ impl ValueRef {
     /// Push a raw leaked index onto a stack
     pub(crate) fn push_index(l: &lua::State, index: i32) {
         ffi::lua_xpush(ref_state().0, l.0, index);
+    }
+
+    pub(crate) fn from_stack(l: &lua::State, index: i32, type_id: i32) -> Self {
+        ffi::lua_xpush(l.0, ref_state().0, index);
+        Self::pop(type_id)
     }
 }
 

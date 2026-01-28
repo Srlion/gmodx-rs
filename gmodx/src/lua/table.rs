@@ -1,6 +1,7 @@
 use crate::lua::{
     self, FromLuaMulti, Function, Nil, Result, ToLuaMulti, Value, ffi,
     traits::{FromLua, ObjectLike, ToLua},
+    value_ref::ValueRef,
 };
 
 // () pushes nothing, so we need to ensure at least one value is pushed to not segfault
@@ -12,7 +13,7 @@ fn push_atleast_one<T: ToLuaMulti>(state: &lua::State, value: T) {
 }
 
 #[derive(Clone, Debug)]
-pub struct Table(pub(crate) Value);
+pub struct Table(pub(crate) ValueRef);
 
 impl Table {
     pub fn set(&self, l: &lua::State, key: impl ToLua, value: impl ToLua) -> Result<()> {
@@ -165,35 +166,39 @@ impl lua::State {
     #[must_use]
     pub fn create_table_with_capacity(&self, narr: i32, nrec: i32) -> Table {
         lua::ffi::lua_createtable(self.0, narr, nrec);
-        Table(Value::pop_from_stack(self))
+        Table(ValueRef::pop_from(self, lua::ValueKind::Table as i32))
     }
 }
 
 impl ToLua for Table {
     fn push_to_stack(self, l: &lua::State) {
-        self.0.push_to_stack(l);
+        self.0.push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0
+        Value::from_ref(self.0)
     }
 }
 
 impl ToLua for &Table {
     fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(l);
+        (&self.0).push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0.clone()
+        Value::from_ref(self.0.clone())
     }
 }
 
 impl FromLua for Table {
     fn try_from_stack(l: &lua::State, index: i32) -> Result<Self> {
         match lua::ffi::lua_type(l.0, index) {
-            lua::ffi::LUA_TTABLE => Ok(Self(Value::from_stack(l, index))),
+            lua::ffi::LUA_TTABLE => Ok(Self(ValueRef::from_stack(
+                l,
+                index,
+                lua::ValueKind::Table as i32,
+            ))),
             _ => Err(l.type_error(index, "table")),
         }
     }

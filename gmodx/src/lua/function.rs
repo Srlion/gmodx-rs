@@ -6,6 +6,7 @@ use crate::lua::{
     self, FromLuaMulti, StackGuard, ToLuaMulti, Value, ffi,
     traits::{FromLua, ToLua},
     types::{Callback, MaybeSend},
+    value_ref::ValueRef,
 };
 
 #[cfg(feature = "tokio")]
@@ -45,14 +46,14 @@ inventory::submit! {
 }
 
 #[derive(Clone, Debug)]
-pub struct Function(pub(crate) Value);
+pub struct Function(pub(crate) ValueRef);
 
 impl Function {
     pub fn call<R: FromLuaMulti>(&self, l: &lua::State, args: impl ToLuaMulti) -> lua::Result<R> {
         let stack_start = ffi::lua_gettop(l.0);
         let _sg = StackGuard::with_top(l.0, stack_start);
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(l); // Push the function onto the stack
+        (&self.0).push(l); // Push the function onto the stack
         args.push_to_stack_multi(l);
         let nargs = ffi::lua_gettop(l.0) - stack_start - 1;
         match ffi::lua_pcall(l.0, nargs, ffi::LUA_MULTRET, 0) {
@@ -163,7 +164,7 @@ impl lua::State {
 
         ffi::lua_pushcclosure(self.0, Some(rust_closure_callback), 1);
 
-        Function(Value::pop_from_stack(self))
+        Function(ValueRef::pop_from(self, lua::ValueKind::Function as i32))
     }
 
     fn arg_error(&self, mut narg: i32, err: lua::Error) -> lua::Error {
@@ -235,29 +236,33 @@ extern "C-unwind" fn rust_closure_callback(l: *mut ffi::lua_State) -> i32 {
 
 impl ToLua for Function {
     fn push_to_stack(self, l: &lua::State) {
-        self.0.push_to_stack(l);
+        self.0.push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0
+        Value::from_ref(self.0)
     }
 }
 
 impl ToLua for &Function {
     fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(l);
+        (&self.0).push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0.clone()
+        Value::from_ref(self.0.clone())
     }
 }
 
 impl FromLua for Function {
     fn try_from_stack(l: &lua::State, index: i32) -> lua::Result<Self> {
         match ffi::lua_type(l.0, index) {
-            ffi::LUA_TFUNCTION => Ok(Self(Value::from_stack(l, index))),
+            ffi::LUA_TFUNCTION => Ok(Self(ValueRef::from_stack(
+                l,
+                index,
+                lua::ValueKind::Function as i32,
+            ))),
             _ => Err(l.type_error(index, "function")),
         }
     }

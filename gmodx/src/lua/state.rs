@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use bstr::ByteSlice;
 
-use crate::lua::{self, FromLua, Function, Table, ToLua, Value, ffi};
+use crate::lua::value_ref::ValueRef;
+use crate::lua::{self, FromLua, Function, Table, ToLua, ffi};
 
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
@@ -47,7 +48,7 @@ impl State {
     #[must_use]
     pub fn globals(&self) -> Table {
         ffi::lua_pushvalue(self.0, ffi::LUA_GLOBALSINDEX);
-        Table(Value::pop_from_stack(self))
+        Table(ValueRef::pop_from(self, lua::ValueKind::Table as i32))
     }
 
     #[inline]
@@ -84,7 +85,10 @@ impl State {
             name.as_ptr(),
         );
         match chunk {
-            ffi::LUA_OK => Ok(Function(Value::pop_from_stack(self))),
+            ffi::LUA_OK => Ok(Function(ValueRef::pop_from(
+                self,
+                lua::ValueKind::Function as i32,
+            ))),
             res => Err(self.pop_error(res)),
         }
     }

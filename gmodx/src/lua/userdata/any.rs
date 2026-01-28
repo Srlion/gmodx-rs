@@ -1,11 +1,12 @@
 use std::ffi::c_void;
 
 use crate::lua::{
-    self, FromLua, FromLuaMulti, Function, ObjectLike, Result, Table, ToLua, ToLuaMulti, Value, ffi,
+    self, FromLua, FromLuaMulti, Function, ObjectLike, Result, Table, ToLua, ToLuaMulti, Value,
+    ffi, value_ref::ValueRef,
 };
 
 #[derive(Clone, Debug)]
-pub struct AnyUserData(pub(crate) Value);
+pub struct AnyUserData(pub(crate) ValueRef);
 
 // We have to force them to pass lua::State here to ensure they are on the main thread
 // without having to check it each time nor have panics at runtime
@@ -28,7 +29,11 @@ impl AnyUserData {
         type_name: &str,
     ) -> Result<Self> {
         if ffi::lua_type(l.0, index) == ffi::LUA_TUSERDATA {
-            Ok(Self(Value::from_stack(l, index)))
+            Ok(Self(ValueRef::from_stack(
+                l,
+                index,
+                lua::ValueKind::UserData as i32,
+            )))
         } else {
             Err(l.type_error(index, type_name))
         }
@@ -68,22 +73,22 @@ impl ObjectLike for AnyUserData {
 
 impl ToLua for AnyUserData {
     fn push_to_stack(self, l: &lua::State) {
-        self.0.push_to_stack(l);
+        self.0.push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0
+        Value::from_ref(self.0)
     }
 }
 
 impl ToLua for &AnyUserData {
     fn push_to_stack(self, l: &lua::State) {
         #[allow(clippy::needless_borrow)]
-        (&self.0).push_to_stack(l);
+        (&self.0).push(l);
     }
 
     fn to_value(self, _: &lua::State) -> Value {
-        self.0.clone()
+        Value::from_ref(self.0.clone())
     }
 }
 

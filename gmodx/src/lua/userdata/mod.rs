@@ -18,7 +18,7 @@ pub use scoped::{ScopedUserData, ScopedUserDataRef};
 
 use crate::lua::value_ref::ValueRef;
 use crate::lua::{self, ffi::lua_State};
-use crate::lua::{Function, Table, ToLua, Value, ffi};
+use crate::lua::{Function, Table, ToLua, ffi};
 
 /// 0 = __index
 /// 1 = __newindex
@@ -68,7 +68,8 @@ inventory::submit! {
             *UD_METAMETHODS.lock().unwrap() = Some((
                 __index.0.leak_index(),
                 __newindex.0.leak_index(),
-            ));        },
+            ));
+        },
         |_| {
             *UD_METAMETHODS.lock().unwrap() = None;
         },
@@ -138,7 +139,7 @@ pub trait UserData {
         Self: Sized,
     {
         push_methods_table::<Self>(l);
-        Table(Value::pop_from_stack(l))
+        Table(ValueRef::pop_from(l, lua::ValueKind::Table as i32))
     }
 }
 
@@ -208,7 +209,10 @@ impl lua::State {
         push_methods_table::<I>(self);
         ffi::lua_setmetatable(self.0, -2);
 
-        (ud_ptr, AnyUserData(Value::pop_from_stack(self)))
+        (
+            ud_ptr,
+            AnyUserData(ValueRef::pop_from(self, lua::ValueKind::UserData as i32)),
+        )
     }
 }
 
