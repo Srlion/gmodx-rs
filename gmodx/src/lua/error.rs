@@ -129,8 +129,8 @@ impl lua::State {
 pub trait LuaResultExt<T> {
     /// Logs the error if present, returns self unchanged.
     fn logged(self) -> Self;
-    /// Logs the error if present, returns Ok value as Option.
-    fn log(self) -> Option<T>;
+    /// Logs the error if present.
+    fn log(self);
 }
 
 impl<T> LuaResultExt<T> for lua::Result<T> {
@@ -146,7 +146,7 @@ impl<T> LuaResultExt<T> for lua::Result<T> {
         self
     }
 
-    fn log(self) -> Option<T> {
-        self.logged().ok()
+    fn log(self) {
+        let _ = self.logged();
     }
 }
