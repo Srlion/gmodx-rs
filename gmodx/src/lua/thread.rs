@@ -37,8 +37,8 @@ impl Thread {
 
         Self::resume_impl(thread_state, l, args)?;
 
-        let nresults = ffi::lua_gettop(l.0);
-        R::try_from_stack_multi(thread_state, nresults + 1, nresults).map(|(v, _)| v)
+        let nresults = ffi::lua_gettop(thread_state.0);
+        R::try_from_stack_multi(thread_state, 1, nresults).map(|(v, _)| v)
     }
 
     pub(crate) fn resume_impl(
