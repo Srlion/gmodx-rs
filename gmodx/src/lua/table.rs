@@ -4,10 +4,11 @@ use crate::lua::{
 };
 
 // () pushes nothing, so we need to ensure at least one value is pushed to not segfault
-fn push_atleast_one<T: ToLuaMulti>(state: &lua::State, value: T) {
-    let count = value.push_to_stack_multi_count(state);
-    if count == 0 {
+fn push_atleast_one<T: ToLua>(state: &lua::State, value: T) {
+    if T::stack_count() == 0 {
         Nil.push_to_stack(state);
+    } else {
+        value.push_to_stack(state);
     }
 }
 
