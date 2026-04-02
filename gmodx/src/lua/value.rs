@@ -337,6 +337,14 @@ impl ToLuaMulti for MultiValue {
             value.push_to_stack(l);
         }
     }
+
+    fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
+        let count = self.0.len() as i32;
+        for value in self {
+            value.push_to_stack(l);
+        }
+        count
+    }
 }
 
 impl ToLuaMulti for &MultiValue {
@@ -344,6 +352,14 @@ impl ToLuaMulti for &MultiValue {
         for value in self.iter() {
             value.push_to_stack(l);
         }
+    }
+
+    fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
+        let count = self.0.len() as i32;
+        for value in self.iter() {
+            value.push_to_stack(l);
+        }
+        count
     }
 }
 

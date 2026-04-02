@@ -32,6 +32,11 @@ impl ToLua for () {
     fn push_to_stack(self, _: &lua::State) {
         // do nothing
     }
+
+    #[inline]
+    fn stack_count() -> i32 {
+        0
+    }
 }
 
 impl FromLua for () {
@@ -447,6 +452,12 @@ macro_rules! impl_tuple_lua_multi {
                 $(
                     $name.push_to_stack_multi(l);
                 )+
+            }
+
+            fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
+                #[allow(non_snake_case)]
+                let ($($name,)+) = self;
+                0 $(+ $name.push_to_stack_multi_count(l))+
             }
         }
 

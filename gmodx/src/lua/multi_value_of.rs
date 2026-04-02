@@ -50,6 +50,14 @@ impl<T: ToLua> ToLuaMulti for MultiValueOf<T> {
             v.push_to_stack(l);
         }
     }
+
+    fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
+        let count = self.0.len() as i32;
+        for v in self.0 {
+            v.push_to_stack(l);
+        }
+        count
+    }
 }
 
 impl<T: FromLua> FromLuaMulti for MultiValueOf<T> {

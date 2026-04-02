@@ -8,6 +8,11 @@ pub trait ToLua: Sized {
         self.push_to_stack(l); // push the value to the stack
         Value::pop_from_stack(l)
     }
+
+    /// Number of stack values this pushes.
+    fn stack_count() -> i32 {
+        1
+    }
 }
 
 pub trait FromLua: Sized {
@@ -22,6 +27,8 @@ pub trait FromLua: Sized {
 
 pub trait ToLuaMulti: Sized {
     fn push_to_stack_multi(self, l: &lua::State);
+
+    /// Returns the number of values pushed. Override when the count is known cheaply.
     fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
         let base = ffi::lua_gettop(l.0);
         self.push_to_stack_multi(l);
@@ -32,6 +39,11 @@ pub trait ToLuaMulti: Sized {
 impl<T: ToLua> ToLuaMulti for T {
     fn push_to_stack_multi(self, l: &lua::State) {
         self.push_to_stack(l);
+    }
+
+    fn push_to_stack_multi_count(self, l: &lua::State) -> i32 {
+        self.push_to_stack(l);
+        T::stack_count()
     }
 }
 
