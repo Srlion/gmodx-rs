@@ -7,7 +7,10 @@ import platform
 import shutil
 import subprocess
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -47,7 +50,8 @@ def target_triple(os_: str, arch: int, windows_gnu: bool = False) -> str:
 
 
 def load_toml(path: Path) -> Dict[str, Any]:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    with open(path, "rb") as f:
+        return tomllib.load(f)
 
 
 def normalize_crate_name(name: str) -> str:
