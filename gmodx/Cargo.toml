@@ -1,45 +1,44 @@
 [package]
 name = "gmodx"
 version = "0.24.0"
-authors = ["Srlion <srlion32@gmail.com>", "William Venner <william@venner.io>"]
 edition = "2024"
-license = "MIT"
 description = "A swiss army knife for creating binary modules for Garry's Mod in Rust"
 repository = "https://github.com/Srlion/gmodx-rs"
-keywords = ["gmod", "garrysmod", "module", "glua"]
+license = "MIT"
+keywords = ["garrysmod", "glua", "gmod", "module"]
 categories = [
-    "api-bindings",
-    "external-ffi-bindings",
-    "game-development",
-    "development-tools",
+  "api-bindings",
+  "development-tools",
+  "external-ffi-bindings",
+  "game-development",
 ]
 
-[features]
-default = []
-send = []
-rust_decimal = ["dep:rust_decimal"]
-tokio = ["dep:tokio", "dep:tokio-util", "send"]
-
 [dependencies]
+bstr = { version = "1.12", default-features = false, features = ["std"] }
+crossbeam-queue = "0.3.12"
 gmodx-macros = { path = "../gmodx-macros", version = "0.5.0" }
 inventory = "0.3.21"
-libloading = "0.8.9" # needs to be kept for "bindgen"
-tokio = { version = "1", optional = true, default-features = false, features = [
-    "rt-multi-thread",
-    "macros",
-    "time",
-] }
-tokio-util = { version = "0.7", optional = true, default-features = false, features = [
-    "rt",
-] }
-bstr = { version = "1.12", features = ["std"], default-features = false }
-rustc-hash = "2.1.1"
-xutex = { git = "https://github.com/Srlion/xutex", rev = "c2b9be4", features = [
-    "reentrant",
-] }
-typeid = "1.0.3"
-crossbeam-queue = "0.3.12"
+libloading = "0.8.9"  # needs to be kept for "bindgen"
 rust_decimal = { version = "1", optional = true }
+rustc-hash = "2.1.1"
+tokio = { version = "1", default-features = false, features = [
+  "macros",
+  "rt-multi-thread",
+  "time",
+], optional = true }
+tokio-util = { version = "0.7", default-features = false, features = [
+  "rt",
+], optional = true }
+typeid = "1.0.3"
+xutex = { git = "https://github.com/Srlion/xutex", rev = "c2b9be4", features = [
+  "reentrant",
+] }
 
 [build-dependencies]
 bindgen = "0.72.1"
+
+[features]
+default = []
+rust_decimal = ["dep:rust_decimal"]
+send = []
+tokio = ["dep:tokio", "dep:tokio-util", "send"]
