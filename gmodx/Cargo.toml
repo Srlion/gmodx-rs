@@ -1,6 +1,6 @@
 [package]
 name = "gmodx"
-version = "0.24.0"
+version = "0.25.0"
 edition = "2024"
 description = "A swiss army knife for creating binary modules for Garry's Mod in Rust"
 repository = "https://github.com/Srlion/gmodx-rs"
@@ -30,7 +30,7 @@ tokio-util = { version = "0.7", default-features = false, features = [
   "rt",
 ], optional = true }
 typeid = "1.0.3"
-xutex = { git = "https://github.com/Srlion/xutex", rev = "c2b9be4", features = [
+xutex = { version = "0.3.0", package = "srlion-xutex", features = [
   "reentrant",
 ] }
 
