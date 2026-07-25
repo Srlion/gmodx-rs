@@ -422,10 +422,10 @@ impl ToLua for &rust_decimal::Decimal {
     #[inline]
     fn push_to_stack(self, l: &lua::State) {
         use rust_decimal::prelude::ToPrimitive;
-        if let Some(f) = self.to_f64() {
-            if rust_decimal::Decimal::try_from(f).is_ok_and(|d| d == *self) {
-                return f.push_to_stack(l);
-            }
+        if let Some(f) = self.to_f64()
+            && rust_decimal::Decimal::try_from(f).is_ok_and(|d| d == *self)
+        {
+            return f.push_to_stack(l);
         }
         self.to_string().push_to_stack(l)
     }

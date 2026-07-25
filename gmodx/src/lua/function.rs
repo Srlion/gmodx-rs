@@ -176,10 +176,10 @@ impl lua::State {
             if let Some(name) = &ar.name {
                 fname = name.to_string();
             }
-            if let Some(nw) = &ar.namewhat {
-                if nw == "method" {
-                    namewhat = Some("method");
-                }
+            if let Some(nw) = &ar.namewhat
+                && nw == "method"
+            {
+                namewhat = Some("method");
             }
         }
 
