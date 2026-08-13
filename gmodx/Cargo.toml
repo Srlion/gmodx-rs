@@ -1,6 +1,6 @@
 [package]
 name = "gmodx"
-version = "0.25.0"
+version = "0.25.1"
 edition = "2024"
 description = "A swiss army knife for creating binary modules for Garry's Mod in Rust"
 repository = "https://github.com/Srlion/gmodx-rs"
