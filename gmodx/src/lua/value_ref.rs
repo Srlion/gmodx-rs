@@ -161,6 +161,7 @@ inventory::submit! {
             // leak the reference thread so it doesn't get GC'd
             ffi::luaL_ref(l.0, ffi::LUA_REGISTRYINDEX);
             REF_STATE.store(thread, Ordering::Release);
+            *SLOTS.lock().unwrap() = SlotPool::new();
         },
         |_| {
             REF_STATE.store(std::ptr::null_mut(), Ordering::Release);

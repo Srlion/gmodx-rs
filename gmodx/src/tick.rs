@@ -79,6 +79,10 @@ inventory::submit! {
 
             crate::timer::create(&format!("gmodx_ticks-{}", gmodx_macros::unique_id!()), 0, 0, run_tick_hooks);
         },
-        |_| {},
+        |_| {
+            HOOKS.lock().unwrap().clear();
+            while PENDING_HOOKS.pop().is_some() {}
+            while ONESHOT_HOOKS.pop().is_some() {}
+        }
     )
 }
